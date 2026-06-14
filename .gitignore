@@ -105,3 +105,7 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Download caches for imported testing assets. Keep extracted assets and licenses instead.
+/[Aa]ssets/External/TestAssets/_Downloads/
+/[Aa]ssets/External/TestAssets/_Downloads.meta

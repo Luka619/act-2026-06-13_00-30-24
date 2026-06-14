@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d10b25ed0533fd04ca4374d9595814a3, type: 3}
+  m_Name: CA_Combat_Overhand_Throw 1
+  m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
+  clip: {fileID: -1662512729948635066, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
+  actionId: action.light_2
+  stateName: Combat / Overhand Throw
+  authoringFrameRate: 60
+  requiresNetworkSync: 1
+  loopPreview: 0
+  rootMotionScale: 1
+  markers:
+  - id: 44d7412f66894e8f8169eafa3a837adc
+    kind: 0
+    normalizedTime: 0.53846157
+    duration: 0.06666667
+    gameplayTag: combat.hitbox.light
+    payload:
+    localOffset: {x: 0, y: 0.75135493, z: -1.1270812}
+    size: {x: 0.8, y: 0.5775003, z: 0.8344754}
+    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
+    serverAuthoritative: 1
+  - id: 1445fd2dbc0e4559a64757c445d06af2
+    kind: 11
+    normalizedTime: 0
+    duration: 0
+    gameplayTag: combat.combo.branch
+    payload:
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  - id: b1564ac71f0e48e08ee5ada46a3d3f08
+    kind: 4
+    normalizedTime: 0
+    duration: 0.43333334
+    gameplayTag: net.sync.action
+    payload:
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  - id: 06e7ac471385489495936beadcb2510a
+    kind: 6
+    normalizedTime: 0.84615386
+    duration: 0.06666667
+    gameplayTag: net.sync.action
+    payload:
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  actionLinks:
+  - id: 181b8f0fe0d343d79daba73e91a4b47f
+    inputAction: attack
+    triggerTag: combat.combo.branch
+    targetDefinition: {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
+    targetActionId: action.light_3
+    startFrame: 27
+    endFrame: 31
+    serverAuthoritative: 1
