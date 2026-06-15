@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "id": "unity-hub-windows-x64",
+      "name": "Unity Hub",
+      "version": "3.15.2",
+      "platform": "windows-x64",
+      "fileName": "UnityHubSetup-x64.exe",
+      "url": "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHubSetup-x64.exe",
+      "sizeBytes": 152906160,
+      "sha256": "ac229560d3319fe691290837d3e165f8058bfa9ba9f32088cd8c5e061529a67f",
+      "md5": "f22bcd3d23ddb636094af6ed43e7031e"
+    },
+    {
+      "id": "unity-editor-6000.6.0a2-windows-x64",
+      "name": "Unity Editor",
+      "version": "6000.6.0a2",
+      "changeset": "64de5ee36373",
+      "platform": "windows-x64",
+      "fileName": "UnitySetup64-6000.6.0a2.exe",
+      "url": "https://download.unity3d.com/download_unity/64de5ee36373/Windows64EditorInstaller/UnitySetup64-6000.6.0a2.exe",
+      "unityHubDeepLink": "unityhub://6000.6.0a2/64de5ee36373",
+      "sizeBytes": 4067812336,
+      "sha256": "cdf0fe6e95dac729f4f658cef101350554a0dc721e5b6aa568fed14f2d0d5277",
+      "md5": "1d9f4c2abeeb759ae2d036cc7052a90e",
+      "md5Base64": "HZ9MKr7rdZri0DbMcFKpDg=="
+    }
+  ]
+}

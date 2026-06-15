@@ -18,3 +18,8 @@ Docs:
 
 - `Docs/ActToolkit.md`
 - `Docs/TestingAssetSources.md`
+
+Installers:
+
+- `installers/installers.json`
+- `scripts/download-installers.ps1`

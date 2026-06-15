@@ -109,3 +109,13 @@ InitTestScene*.unity*
 # Download caches for imported testing assets. Keep extracted assets and licenses instead.
 /[Aa]ssets/External/TestAssets/_Downloads/
 /[Aa]ssets/External/TestAssets/_Downloads.meta
+
+# Local installer payloads. Keep manifests and docs, download binaries on demand.
+/installers/downloads/
+/installers/*.exe
+/installers/*.pkg
+/installers/*.msi
+/installers/*.zip
+/installers/*.torrent
+/installers/*.log
+/installers/*.html
