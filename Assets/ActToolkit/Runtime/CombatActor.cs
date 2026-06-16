@@ -236,12 +236,12 @@ namespace ActToolkit
 
             if (input.AttackPressed)
             {
-                HandlePressedCombatInput(CombatInputActionNames.LightAttack);
+                HandlePressedCombatInput(CombatInputActionNames.WithMoveDirection(CombatInputActionNames.LightAttack, input.Move));
             }
 
             if (input.HeavyPressed)
             {
-                HandlePressedCombatInput(CombatInputActionNames.HeavyAttack);
+                HandlePressedCombatInput(CombatInputActionNames.WithMoveDirection(CombatInputActionNames.HeavyAttack, input.Move));
             }
         }
 
@@ -540,6 +540,20 @@ namespace ActToolkit
 
             int frameRate = Mathf.Max(1, currentAction.authoringFrameRate);
             int currentFrame = Mathf.RoundToInt(currentActionTime * frameRate);
+
+            foreach (CombatActionLink link in currentAction.actionLinks)
+            {
+                if (link == null || !CombatInputActionNames.ExactMatches(link.inputAction, inputAction))
+                {
+                    continue;
+                }
+
+                if (currentFrame >= link.startFrame && currentFrame <= Mathf.Max(link.startFrame, link.endFrame))
+                {
+                    targetActionId = link.targetActionId;
+                    return !string.IsNullOrWhiteSpace(targetActionId);
+                }
+            }
 
             foreach (CombatActionLink link in currentAction.actionLinks)
             {

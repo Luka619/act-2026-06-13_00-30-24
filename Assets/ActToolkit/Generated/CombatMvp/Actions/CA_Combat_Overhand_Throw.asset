@@ -64,8 +64,8 @@ MonoBehaviour:
   - id: a465d1ef34b64b5a9e220f5b87d389d0
     inputAction: Attack.Light
     triggerTag: combat.combo.branch
-    targetDefinition: {fileID: 11400000, guid: 92b09df5592b9df409da3fb7fd2cb181, type: 2}
-    targetActionId: action.light_2
+    targetDefinition: {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
+    targetActionId: action.light_3
     startFrame: 36
     endFrame: 80
     serverAuthoritative: 1

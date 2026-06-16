@@ -110,6 +110,17 @@ namespace ActToolkit
 
             foreach (CombatActionEntry entry in entryActions)
             {
+                if (entry == null || !CombatInputActionNames.ExactMatches(entry.inputAction, inputAction))
+                {
+                    continue;
+                }
+
+                targetActionId = entry.targetDefinition != null ? entry.targetDefinition.actionId : entry.targetActionId;
+                return !string.IsNullOrWhiteSpace(targetActionId);
+            }
+
+            foreach (CombatActionEntry entry in entryActions)
+            {
                 if (entry == null || !CombatInputActionNames.Matches(entry.inputAction, inputAction))
                 {
                     continue;

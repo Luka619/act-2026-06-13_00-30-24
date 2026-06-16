@@ -12,6 +12,7 @@ namespace ActToolkit.EditorTools
     public sealed class CombatAnimationEditorWindow : EditorWindow
     {
         private const string CharacterProfilePrefsKey = "ActToolkit.CharacterActionEditor.Profile";
+        private const string EditorPagePrefsKey = "ActToolkit.CharacterActionEditor.Page";
         private const string DefaultCharacterProfilePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CharacterActionProfile.asset";
         private const string ModelFolderPrefsKey = "ActToolkit.CombatAnimationEditor.ModelFolder";
         private const string AnimationFolderPrefsKey = "ActToolkit.CombatAnimationEditor.AnimationFolder";
@@ -21,6 +22,24 @@ namespace ActToolkit.EditorTools
         private const string PreviewSampleRootName = "Preview Model";
         private const double EditorRepaintInterval = 1d / 15d;
         private const string PreviewSceneName = "ActAnimationPreview";
+
+        private enum EditorPage
+        {
+            CharacterSetup,
+            ActionAuthoring
+        }
+
+        private enum CharacterDefaultClipSlot
+        {
+            Idle,
+            Move
+        }
+
+        private enum AnimationLibraryContext
+        {
+            ActionAuthoring,
+            CharacterDefaults
+        }
 
         private GameObject previewRoot;
         private Animator previewAnimator;
@@ -55,6 +74,12 @@ namespace ActToolkit.EditorTools
         private bool showAssetDrawer = true;
         private bool showRootMotionDrawer;
         private bool showActionLinksDrawer;
+        private bool showAdvancedComboGraph;
+        private EditorPage currentPage = EditorPage.ActionAuthoring;
+        private CharacterDefaultClipSlot defaultClipSlot = CharacterDefaultClipSlot.Idle;
+        private string comboEditorInputAction = CombatInputActionNames.LightAttack;
+        private int comboEditorDefaultStartFrame = 12;
+        private int comboEditorDefaultEndFrame = 24;
         private CombatComboGraphView characterActionGraphView;
         private CombatAnimationEventKind markerTemplate = CombatAnimationEventKind.Hitbox;
         private ActionRecipe actionRecipe = ActionRecipe.LightAttack;
@@ -83,9 +108,18 @@ namespace ActToolkit.EditorTools
         {
             modelFolder = EditorPrefs.GetString(ModelFolderPrefsKey, ActToolkitEditorUtilities.DefaultModelFolder);
             animationFolder = EditorPrefs.GetString(AnimationFolderPrefsKey, ActToolkitEditorUtilities.DefaultPreviewClipFolder);
-            characterActionGraphView = new CombatComboGraphView(Repaint);
+            currentPage = (EditorPage)Mathf.Clamp(
+                EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ActionAuthoring),
+                (int)EditorPage.CharacterSetup,
+                (int)EditorPage.ActionAuthoring);
+            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring);
             characterActionGraphView.Initialize();
             LoadCharacterProfileFromPrefs();
+            if (characterProfile == null)
+            {
+                currentPage = EditorPage.CharacterSetup;
+            }
+
             ClearSpawnedPreviewModels();
             RefreshModelLibrary(false);
             RefreshAnimationLibrary(false);
@@ -141,9 +175,15 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.Space(6f);
             DrawCharacterProfileHeader();
             EditorGUILayout.Space(4f);
-            DrawStatusHeader();
-            EditorGUILayout.Space(4f);
-            DrawQuickActions();
+            DrawPageNavigator();
+
+            if (currentPage == EditorPage.ActionAuthoring)
+            {
+                EditorGUILayout.Space(4f);
+                DrawStatusHeader();
+                EditorGUILayout.Space(4f);
+                DrawQuickActions();
+            }
 
             mainScroll = EditorGUILayout.BeginScrollView(mainScroll);
             try
@@ -195,15 +235,7 @@ namespace ActToolkit.EditorTools
                 ApplyCharacterProfileToEditor(true);
             }
 
-            using (new EditorGUI.DisabledScope(characterProfile == null))
-            {
-                if (GUILayout.Button("Apply", GUILayout.Width(54f)))
-                {
-                    ApplyCharacterProfileToEditor(true);
-                }
-            }
-
-            if (GUILayout.Button("Create", GUILayout.Width(58f)))
+            if (GUILayout.Button("New Character", GUILayout.Width(106f)))
             {
                 CreateCharacterProfileAsset();
             }
@@ -220,26 +252,45 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+        }
 
-            if (characterProfile != null)
+        private void DrawPageNavigator()
+        {
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+            GUILayout.Label("Work Area", GUILayout.Width(72f));
+            DrawPageButton(EditorPage.CharacterSetup, "Character Setup", 132f);
+            DrawPageButton(EditorPage.ActionAuthoring, "Action Authoring", 136f);
+            GUILayout.FlexibleSpace();
+
+            if (currentPage == EditorPage.ActionAuthoring && characterProfile != null)
             {
-                EditorGUI.BeginChangeCheck();
-                characterProfile.characterId = EditorGUILayout.TextField("Character Id", characterProfile.characterId);
-                characterProfile.displayName = EditorGUILayout.TextField("Display Name", characterProfile.displayName);
-                characterProfile.modelPrefab = (GameObject)EditorGUILayout.ObjectField("Model", characterProfile.modelPrefab, typeof(GameObject), false);
-                characterProfile.avatar = (Avatar)EditorGUILayout.ObjectField("Avatar", characterProfile.avatar, typeof(Avatar), false);
-                characterProfile.comboTable = (CombatActionDatabase)EditorGUILayout.ObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase), false);
-                characterProfile.idleClip = (AnimationClip)EditorGUILayout.ObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip), false);
-                characterProfile.moveClip = (AnimationClip)EditorGUILayout.ObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip), false);
-                if (EditorGUI.EndChangeCheck())
+                using (new EditorGUI.DisabledScope(true))
                 {
-                    characterProfile.EnsureDefaults();
-                    EditorUtility.SetDirty(characterProfile);
-                    ApplyCharacterProfileToEditor(true);
+                    EditorGUILayout.ObjectField(characterProfile.modelPrefab, typeof(GameObject), false, GUILayout.Width(220f));
                 }
+
+                GUILayout.Label("model comes from the selected character", EditorStyles.miniLabel);
             }
 
-            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawPageButton(EditorPage page, string label, float width)
+        {
+            bool selected = currentPage == page;
+            bool nextSelected = GUILayout.Toggle(selected, label, EditorStyles.toolbarButton, GUILayout.Width(width));
+            if (!selected && nextSelected)
+            {
+                currentPage = page;
+                EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
+                if (currentPage == EditorPage.ActionAuthoring)
+                {
+                    ApplyCharacterProfileToEditor(true);
+                }
+
+                GUI.FocusControl(null);
+            }
         }
 
         private void LoadCharacterProfileFromPrefs()
@@ -262,25 +313,48 @@ namespace ActToolkit.EditorTools
         {
             ActToolkitEditorUtilities.EnsureGeneratedFolders();
 
+            string modelPath = GetSelectedModelPath();
+            string displayName = string.IsNullOrWhiteSpace(modelPath) ? "New Character" : BuildModelDisplayName(modelPath);
+
             CharacterActionProfile profile = CreateInstance<CharacterActionProfile>();
-            profile.characterId = "character.new";
-            profile.displayName = "New Character";
+            profile.characterId = BuildCharacterIdFromName(displayName);
+            profile.displayName = displayName;
             profile.modelPrefab = LoadSelectedModelAsset();
-            profile.avatar = LoadAvatarFromModel(GetSelectedModelPath());
-            profile.comboTable = characterActionGraphView == null ? LoadOrCreateDefaultComboTable() : characterActionGraphView.Database ?? LoadOrCreateDefaultComboTable();
+            profile.avatar = LoadAvatarFromModel(modelPath);
+            profile.comboTable = CreateComboTableAsset(displayName);
             profile.idleClip = null;
             profile.moveClip = null;
             profile.EnsureDefaults();
 
-            string path = AssetDatabase.GenerateUniqueAssetPath(ActToolkitEditorUtilities.CombatMvpFolder + "/CharacterActionProfile.asset");
+            string path = AssetDatabase.GenerateUniqueAssetPath(ActToolkitEditorUtilities.CombatMvpFolder + "/" + SanitizeAssetName(displayName) + "_Profile.asset");
             AssetDatabase.CreateAsset(profile, path);
             AssetDatabase.SaveAssets();
 
             characterProfile = profile;
             SaveCharacterProfilePrefs();
             ApplyCharacterProfileToEditor(true);
+            currentPage = EditorPage.CharacterSetup;
+            EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
             Selection.activeObject = profile;
             EditorGUIUtility.PingObject(profile);
+        }
+
+        private static string BuildCharacterIdFromName(string displayName)
+        {
+            string sanitized = SanitizeAssetName(string.IsNullOrWhiteSpace(displayName) ? "New Character" : displayName);
+            return "character." + sanitized.ToLowerInvariant().Replace('_', '.');
+        }
+
+        private CombatActionDatabase CreateComboTableAsset(string displayName)
+        {
+            ActToolkitEditorUtilities.EnsureGeneratedFolders();
+
+            string assetName = SanitizeAssetName(string.IsNullOrWhiteSpace(displayName) ? "New Character" : displayName) + "_ComboTable";
+            string path = AssetDatabase.GenerateUniqueAssetPath(ActToolkitEditorUtilities.CombatMvpFolder + "/" + assetName + ".asset");
+            CombatActionDatabase database = CreateInstance<CombatActionDatabase>();
+            AssetDatabase.CreateAsset(database, path);
+            EditorUtility.SetDirty(database);
+            return database;
         }
 
         private CombatActionDatabase LoadOrCreateDefaultComboTable()
@@ -300,7 +374,7 @@ namespace ActToolkit.EditorTools
             return database;
         }
 
-        private void ApplyCharacterProfileToEditor(bool refreshPreview)
+        private void ApplyCharacterProfileToEditor(bool refreshPreview, bool selectFirstAction = true)
         {
             if (characterProfile == null)
             {
@@ -316,7 +390,10 @@ namespace ActToolkit.EditorTools
             }
 
             SelectProfileModel();
-            SelectFirstProfileAction();
+            if (selectFirstAction)
+            {
+                SelectFirstProfileAction();
+            }
 
             if (refreshPreview)
             {
@@ -456,6 +533,12 @@ namespace ActToolkit.EditorTools
 
         private void DrawWorkspace()
         {
+            if (currentPage == EditorPage.CharacterSetup)
+            {
+                DrawCharacterSetupPage();
+                return;
+            }
+
             DrawMainAuthoringWorkbench();
             EditorGUILayout.Space(8f);
             DrawCharacterActionGraph();
@@ -463,23 +546,790 @@ namespace ActToolkit.EditorTools
             DrawUtilityDrawers();
         }
 
+        private void DrawCharacterSetupPage()
+        {
+            if (characterProfile == null)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.LabelField("Character Setup", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox("Create or select a Character Action Profile first. This page owns the model, Avatar, idle/move clips, and combo table for that character.", MessageType.Info);
+                if (GUILayout.Button("New Character", GUILayout.Height(30f), GUILayout.Width(160f)))
+                {
+                    CreateCharacterProfileAsset();
+                }
+
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            EditorGUILayout.BeginHorizontal();
+
+            EditorGUILayout.BeginVertical(GUILayout.MinWidth(360f));
+            DrawCharacterBasicSettings();
+            EditorGUILayout.Space(8f);
+            DrawCharacterRuntimeSummary();
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.BeginVertical(GUILayout.MinWidth(360f));
+            DrawModelLibraryControls(true);
+            EditorGUILayout.Space(8f);
+            DrawCharacterDefaultClipPicker();
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawCharacterBasicSettings()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Basic Parameters", EditorStyles.boldLabel);
+
+            GameObject previousModel = characterProfile.modelPrefab;
+            CombatActionDatabase previousComboTable = characterProfile.comboTable;
+
+            EditorGUI.BeginChangeCheck();
+            characterProfile.characterId = EditorGUILayout.TextField("Character Id", characterProfile.characterId);
+            characterProfile.displayName = EditorGUILayout.TextField("Display Name", characterProfile.displayName);
+            characterProfile.modelPrefab = (GameObject)EditorGUILayout.ObjectField("Model", characterProfile.modelPrefab, typeof(GameObject), false);
+            characterProfile.avatar = (Avatar)EditorGUILayout.ObjectField("Avatar", characterProfile.avatar, typeof(Avatar), false);
+            characterProfile.idleClip = (AnimationClip)EditorGUILayout.ObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip), false);
+            characterProfile.moveClip = (AnimationClip)EditorGUILayout.ObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip), false);
+            characterProfile.comboTable = (CombatActionDatabase)EditorGUILayout.ObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase), false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                bool modelChanged = previousModel != characterProfile.modelPrefab;
+                if (modelChanged)
+                {
+                    AutoAssignAvatarFromProfileModel(true);
+                }
+
+                SaveCharacterProfileChanges(modelChanged, previousComboTable != characterProfile.comboTable);
+            }
+
+            EditorGUILayout.Space(6f);
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(characterProfile.modelPrefab == null))
+            {
+                if (GUILayout.Button("Auto Fill Avatar", GUILayout.Height(26f)))
+                {
+                    AutoAssignAvatarFromProfileModel(true);
+                    SaveCharacterProfileChanges(true, false);
+                }
+            }
+
+            if (GUILayout.Button("Create Combo Table", GUILayout.Height(26f)))
+            {
+                characterProfile.comboTable = CreateComboTableAsset(characterProfile.displayName);
+                SaveCharacterProfileChanges(false, true);
+                AssetDatabase.SaveAssets();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.HelpBox("Action Authoring reads these values from the selected character. Once they are set here, you do not need to pick the model again while editing moves.", MessageType.None);
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCharacterRuntimeSummary()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Resolved For Authoring", EditorStyles.boldLabel);
+            DrawReadonlyObjectField("Profile", characterProfile, typeof(CharacterActionProfile));
+            DrawReadonlyObjectField("Model", characterProfile.modelPrefab, typeof(GameObject));
+            DrawReadonlyObjectField("Avatar", characterProfile.avatar, typeof(Avatar));
+            DrawReadonlyObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase));
+            DrawReadonlyObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip));
+            DrawReadonlyObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip));
+            EditorGUILayout.EndVertical();
+        }
+
+        private static void DrawReadonlyObjectField(string label, UnityEngine.Object value, Type type)
+        {
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField(label, value, type, false);
+            }
+        }
+
+        private void DrawCharacterDefaultClipPicker()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Default Animation Picker", EditorStyles.boldLabel);
+
+            EditorGUI.BeginChangeCheck();
+            defaultClipSlot = (CharacterDefaultClipSlot)EditorGUILayout.EnumPopup("Assign Selected Clip To", defaultClipSlot);
+            if (EditorGUI.EndChangeCheck())
+            {
+                SelectCurrentDefaultClipInLibrary();
+            }
+
+            DrawAnimationLibraryControls(AnimationLibraryContext.CharacterDefaults);
+            EditorGUILayout.EndVertical();
+        }
+
+        private void SaveCharacterProfileChanges(bool refreshPreview, bool comboTableChanged)
+        {
+            if (characterProfile == null)
+            {
+                return;
+            }
+
+            characterProfile.EnsureDefaults();
+            EditorUtility.SetDirty(characterProfile);
+
+            if (comboTableChanged && characterActionGraphView != null)
+            {
+                characterActionGraphView.SetDatabase(characterProfile.comboTable, true);
+                characterActionGraphView.Refresh();
+            }
+
+            ApplyCharacterProfileToEditor(refreshPreview, false);
+        }
+
+        private void AutoAssignAvatarFromProfileModel(bool overwriteExisting)
+        {
+            if (characterProfile == null || characterProfile.modelPrefab == null)
+            {
+                return;
+            }
+
+            if (!overwriteExisting && characterProfile.avatar != null)
+            {
+                return;
+            }
+
+            string path = AssetDatabase.GetAssetPath(characterProfile.modelPrefab);
+            Avatar avatar = LoadAvatarFromModel(path);
+            if (avatar != null)
+            {
+                characterProfile.avatar = avatar;
+            }
+        }
+
         private void DrawCharacterActionGraph()
         {
-            showCharacterActionGraph = EditorGUILayout.Foldout(showCharacterActionGraph, "Character Action Graph", true);
+            showCharacterActionGraph = EditorGUILayout.Foldout(showCharacterActionGraph, "Combo Table Editor", true);
             if (!showCharacterActionGraph)
             {
                 return;
             }
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            if (characterProfile == null)
+            {
+                EditorGUILayout.HelpBox("Select or create a character before editing combo rules.", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            if (characterProfile.comboTable == null)
+            {
+                EditorGUILayout.HelpBox("This character does not have a combo table yet.", MessageType.Warning);
+                if (GUILayout.Button("Create Combo Table", GUILayout.Height(28f), GUILayout.Width(160f)))
+                {
+                    characterProfile.comboTable = CreateComboTableAsset(characterProfile.displayName);
+                    SaveCharacterProfileChanges(false, true);
+                    AssetDatabase.SaveAssets();
+                }
+
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Combo Graph", EditorStyles.boldLabel, GUILayout.Width(90f));
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField(characterProfile.comboTable, typeof(CombatActionDatabase), false);
+            }
+
+            if (GUILayout.Button("Refresh", GUILayout.Width(72f)))
+            {
+                characterProfile.comboTable.RebuildLookup();
+                characterActionGraphView?.Refresh();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.HelpBox("Build the combo as nodes: pick the input sequence in the toolbar, then drag Idle or an Action output into another Action. The input pill on each connection is the rule you can select and edit.", MessageType.None);
+
             if (characterActionGraphView == null)
             {
-                characterActionGraphView = new CombatComboGraphView(Repaint);
+                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring);
                 characterActionGraphView.Initialize();
             }
 
+            characterActionGraphView.SetDatabase(characterProfile.comboTable, true);
             characterActionGraphView.Draw(true);
+
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawComboTableHeader(CombatActionDatabase database)
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Combo Table", EditorStyles.boldLabel, GUILayout.Width(88f));
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField(database, typeof(CombatActionDatabase), false);
+            }
+
+            if (GUILayout.Button("Refresh", GUILayout.Width(72f)))
+            {
+                database.RebuildLookup();
+                characterActionGraphView?.Refresh();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            int actionCount = GetDatabaseActions(database).Count;
+            database.EnsureEntryActions();
+            EditorGUILayout.LabelField(actionCount + " actions, " + database.entryActions.Count + " entry rules", EditorStyles.miniLabel);
+        }
+
+        private void DrawEntryMovesEditor(CombatActionDatabase database)
+        {
+            database.EnsureEntryActions();
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("1. Entry Moves", EditorStyles.boldLabel);
+
+            if (database.entryActions.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No entry move yet. Add one so the character knows which action starts when you press a button from idle.", MessageType.None);
+            }
+
+            int removeIndex = -1;
+            for (int i = 0; i < database.entryActions.Count; i++)
+            {
+                CombatActionEntry entry = database.entryActions[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUI.BeginChangeCheck();
+
+                CombatAnimationDefinition resolvedTarget = ResolveEntryTarget(database, entry);
+                EditorGUILayout.BeginHorizontal();
+                DrawInputSequence(entry.inputAction, GUILayout.Width(170f));
+                GUILayout.Label("starts", GUILayout.Width(42f));
+                if (GUILayout.Button(ActionChoiceLabel(resolvedTarget), EditorStyles.miniButton, GUILayout.MinWidth(220f), GUILayout.Height(24f)))
+                {
+                    SelectActionForAuthoring(resolvedTarget);
+                }
+
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Remove", GUILayout.Width(70f)))
+                {
+                    removeIndex = i;
+                }
+
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Input", GUILayout.Width(42f));
+                entry.inputAction = DrawInputActionCompactPopup(entry.inputAction, GUILayout.Width(180f));
+                GUILayout.Label("Action", GUILayout.Width(48f));
+                CombatAnimationDefinition target = DrawComboActionCompactPopup(database, entry.targetDefinition, entry.targetActionId, GUILayout.MinWidth(240f));
+                if (target != entry.targetDefinition)
+                {
+                    SetEntryTarget(entry, target);
+                }
+
+                entry.serverAuthoritative = GUILayout.Toggle(entry.serverAuthoritative, "Server", GUILayout.Width(68f));
+                if (GUILayout.Button("Open Action Detail", GUILayout.Width(126f)))
+                {
+                    SelectActionForAuthoring(ResolveEntryTarget(database, entry));
+                }
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    EditorUtility.SetDirty(database);
+                    RefreshComboGraphView(database);
+                }
+
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("New entry", GUILayout.Width(72f));
+            DrawInputSequence(comboEditorInputAction, GUILayout.Width(170f));
+            comboEditorInputAction = DrawInputActionCompactPopup(comboEditorInputAction, GUILayout.Width(180f));
+            using (new EditorGUI.DisabledScope(GetDatabaseActions(database).Count == 0))
+            {
+                if (GUILayout.Button("Add / Update Entry", GUILayout.Width(150f)))
+                {
+                    AddOrUpdateEntryMove(database);
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            if (removeIndex >= 0)
+            {
+                database.entryActions.RemoveAt(removeIndex);
+                EditorUtility.SetDirty(database);
+                RefreshComboGraphView(database);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawComboBranchesEditor(CombatActionDatabase database)
+        {
+            List<CombatAnimationDefinition> actions = GetDatabaseActions(database);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("2. Combo Branches", EditorStyles.boldLabel);
+
+            if (actions.Count == 0)
+            {
+                EditorGUILayout.HelpBox("Create actions from animation clips first. Each action will appear here with its follow-up branches.", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("New branch input", GUILayout.Width(110f));
+            DrawInputSequence(comboEditorInputAction, GUILayout.Width(170f));
+            comboEditorInputAction = DrawInputActionCompactPopup(comboEditorInputAction, GUILayout.Width(180f));
+            GUILayout.Label("window", GUILayout.Width(52f));
+            comboEditorDefaultStartFrame = Mathf.Max(0, EditorGUILayout.IntField(comboEditorDefaultStartFrame, GUILayout.Width(48f)));
+            GUILayout.Label("-", GUILayout.Width(10f));
+            comboEditorDefaultEndFrame = Mathf.Max(comboEditorDefaultStartFrame, EditorGUILayout.IntField(comboEditorDefaultEndFrame, GUILayout.Width(48f)));
+            GUILayout.Label("frames", EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+
+            foreach (CombatAnimationDefinition action in actions)
+            {
+                DrawActionBranchCard(database, action);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawActionBranchCard(CombatActionDatabase database, CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            action.EnsureActionLinks();
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(ActionChoiceLabel(action), EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Edit Action", GUILayout.Width(86f)))
+            {
+                SelectActionForAuthoring(action);
+            }
+
+            if (GUILayout.Button("Ping", GUILayout.Width(48f)))
+            {
+                Selection.activeObject = action;
+                EditorGUIUtility.PingObject(action);
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField("Clip: " + (action.clip == null ? "None" : BuildAnimationDisplayName(action.clip.name)), EditorStyles.miniLabel);
+
+            if (action.actionLinks.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No follow-up yet. Add a branch if this action can cancel or combo into another action.", MessageType.None);
+            }
+
+            int removeIndex = -1;
+            int frameCount = GetActionFrameCount(action);
+            for (int i = 0; i < action.actionLinks.Count; i++)
+            {
+                CombatActionLink link = action.actionLinks[i];
+                if (link == null)
+                {
+                    continue;
+                }
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUI.BeginChangeCheck();
+
+                CombatAnimationDefinition resolvedTarget = ResolveLinkTarget(database, link);
+                EditorGUILayout.BeginHorizontal();
+                DrawInputSequence(link.inputAction, GUILayout.Width(170f));
+                GUILayout.Label("during " + link.startFrame + "-" + Mathf.Max(link.endFrame, link.startFrame) + "f", GUILayout.Width(104f));
+                GUILayout.Label("goes to", GUILayout.Width(56f));
+                if (GUILayout.Button(ActionChoiceLabel(resolvedTarget), EditorStyles.miniButton, GUILayout.MinWidth(220f), GUILayout.Height(24f)))
+                {
+                    SelectActionForAuthoring(resolvedTarget);
+                }
+
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Remove", GUILayout.Width(70f)))
+                {
+                    removeIndex = i;
+                }
+
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Input", GUILayout.Width(42f));
+                link.inputAction = DrawInputActionCompactPopup(link.inputAction, GUILayout.Width(180f));
+                GUILayout.Label("Frames", GUILayout.Width(48f));
+                link.startFrame = Mathf.Clamp(EditorGUILayout.IntField(link.startFrame, GUILayout.Width(48f)), 0, Mathf.Max(0, frameCount));
+                GUILayout.Label("-", GUILayout.Width(10f));
+                link.endFrame = Mathf.Clamp(EditorGUILayout.IntField(Mathf.Max(link.endFrame, link.startFrame), GUILayout.Width(48f)), link.startFrame, Mathf.Max(link.startFrame, frameCount));
+                GUILayout.Label("Target", GUILayout.Width(44f));
+                CombatAnimationDefinition target = DrawComboActionCompactPopup(database, link.targetDefinition, link.targetActionId, GUILayout.MinWidth(240f));
+                if (target != link.targetDefinition)
+                {
+                    SetLinkTarget(link, target);
+                }
+
+                if (GUILayout.Button("Open Action Detail", GUILayout.Width(126f)))
+                {
+                    SelectActionForAuthoring(ResolveLinkTarget(database, link));
+                }
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (string.IsNullOrWhiteSpace(link.triggerTag))
+                    {
+                        link.triggerTag = "combat.combo.branch";
+                    }
+
+                    EditorUtility.SetDirty(action);
+                    RefreshComboGraphView(database);
+                }
+
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(GetFirstOtherAction(database, action) == null))
+            {
+                if (GUILayout.Button("Add Branch To Next Action", GUILayout.Width(180f)))
+                {
+                    AddBranchToNextAction(database, action);
+                }
+            }
+
+            GUILayout.Label("Uses the input/window above; target can be changed on the new row.", EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+
+            if (removeIndex >= 0)
+            {
+                action.actionLinks.RemoveAt(removeIndex);
+                EditorUtility.SetDirty(action);
+                RefreshComboGraphView(database);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private List<CombatAnimationDefinition> GetDatabaseActions(CombatActionDatabase database)
+        {
+            List<CombatAnimationDefinition> actions = new List<CombatAnimationDefinition>();
+            if (database == null)
+            {
+                return actions;
+            }
+
+            if (database.actions == null)
+            {
+                database.actions = new List<CombatAnimationDefinition>();
+            }
+
+            foreach (CombatAnimationDefinition action in database.actions)
+            {
+                if (action != null)
+                {
+                    actions.Add(action);
+                }
+            }
+
+            return actions;
+        }
+
+        private CombatAnimationDefinition DrawComboActionCompactPopup(CombatActionDatabase database, CombatAnimationDefinition current, string targetActionId, params GUILayoutOption[] options)
+        {
+            List<CombatAnimationDefinition> actions = GetDatabaseActions(database);
+            string[] labels = new string[actions.Count + 1];
+            labels[0] = "None";
+
+            int selectedIndex = 0;
+            for (int i = 0; i < actions.Count; i++)
+            {
+                CombatAnimationDefinition action = actions[i];
+                labels[i + 1] = ActionChoiceLabel(action);
+                if (action == current || current == null && string.Equals(action.actionId, targetActionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    selectedIndex = i + 1;
+                }
+            }
+
+            int nextIndex = EditorGUILayout.Popup(selectedIndex, labels, options);
+            return nextIndex <= 0 || nextIndex > actions.Count ? null : actions[nextIndex - 1];
+        }
+
+        private static string DrawInputActionCompactPopup(string inputAction, params GUILayoutOption[] options)
+        {
+            string normalized = CombatInputActionNames.Normalize(inputAction);
+            int selectedIndex = Array.IndexOf(CombatInputActionNames.AuthoringNames, normalized);
+            string[] labels = BuildInputActionPopupLabels(inputAction, selectedIndex);
+            int nextIndex = EditorGUILayout.Popup(selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels, options);
+            if (nextIndex >= 0 && nextIndex < CombatInputActionNames.AuthoringNames.Length)
+            {
+                return CombatInputActionNames.AuthoringNames[nextIndex];
+            }
+
+            return inputAction;
+        }
+
+        private static void DrawInputSequence(string inputAction, params GUILayoutOption[] options)
+        {
+            EditorGUILayout.BeginHorizontal(options);
+            CombatInputActionNames.TryDescribeSequence(inputAction, out string stickToken, out string buttonToken, out string actionToken);
+
+            if (!string.IsNullOrWhiteSpace(stickToken))
+            {
+                DrawInputChip(stickToken, new Color(0.24f, 0.42f, 0.62f, 1f), 48f);
+                GUILayout.Label("+", EditorStyles.miniBoldLabel, GUILayout.Width(12f));
+            }
+
+            DrawInputChip(buttonToken, ButtonColor(buttonToken), 34f);
+            GUILayout.Space(4f);
+            GUILayout.Label(actionToken, EditorStyles.miniBoldLabel, GUILayout.Width(54f));
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private static void DrawInputChip(string text, Color color, float width)
+        {
+            Color previousColor = GUI.backgroundColor;
+            GUI.backgroundColor = color;
+            GUILayout.Box(text, EditorStyles.miniButton, GUILayout.Width(width), GUILayout.Height(22f));
+            GUI.backgroundColor = previousColor;
+        }
+
+        private static Color ButtonColor(string buttonToken)
+        {
+            switch (buttonToken)
+            {
+                case "□":
+                    return new Color(0.32f, 0.55f, 0.95f, 1f);
+                case "△":
+                    return new Color(0.34f, 0.70f, 0.48f, 1f);
+                case "○":
+                    return new Color(0.90f, 0.38f, 0.38f, 1f);
+                case "×":
+                    return new Color(0.60f, 0.48f, 0.95f, 1f);
+                default:
+                    return new Color(0.42f, 0.42f, 0.42f, 1f);
+            }
+        }
+
+        private static string ActionChoiceLabel(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return "None";
+            }
+
+            string label = string.IsNullOrWhiteSpace(action.stateName) ? action.actionId : action.stateName;
+            if (!string.IsNullOrWhiteSpace(action.actionId) && !string.Equals(label, action.actionId, StringComparison.OrdinalIgnoreCase))
+            {
+                label += " (" + action.actionId + ")";
+            }
+
+            return ShortenMiddle(label, 54);
+        }
+
+        private CombatAnimationDefinition ResolveEntryTarget(CombatActionDatabase database, CombatActionEntry entry)
+        {
+            if (entry == null)
+            {
+                return null;
+            }
+
+            if (entry.targetDefinition != null)
+            {
+                return entry.targetDefinition;
+            }
+
+            return FindActionById(database, entry.targetActionId);
+        }
+
+        private CombatAnimationDefinition ResolveLinkTarget(CombatActionDatabase database, CombatActionLink link)
+        {
+            if (link == null)
+            {
+                return null;
+            }
+
+            if (link.targetDefinition != null)
+            {
+                return link.targetDefinition;
+            }
+
+            return FindActionById(database, link.targetActionId);
+        }
+
+        private CombatAnimationDefinition FindActionById(CombatActionDatabase database, string actionId)
+        {
+            if (database == null || string.IsNullOrWhiteSpace(actionId))
+            {
+                return null;
+            }
+
+            foreach (CombatAnimationDefinition action in GetDatabaseActions(database))
+            {
+                if (action != null && string.Equals(action.actionId, actionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return action;
+                }
+            }
+
+            return null;
+        }
+
+        private void SetEntryTarget(CombatActionEntry entry, CombatAnimationDefinition target)
+        {
+            if (entry == null)
+            {
+                return;
+            }
+
+            entry.targetDefinition = target;
+            entry.targetActionId = target == null ? string.Empty : target.actionId;
+        }
+
+        private void SetLinkTarget(CombatActionLink link, CombatAnimationDefinition target)
+        {
+            if (link == null)
+            {
+                return;
+            }
+
+            link.targetDefinition = target;
+            link.targetActionId = target == null ? string.Empty : target.actionId;
+        }
+
+        private void AddOrUpdateEntryMove(CombatActionDatabase database)
+        {
+            if (database == null)
+            {
+                return;
+            }
+
+            database.EnsureEntryActions();
+            CombatAnimationDefinition target = definition != null && GetDatabaseActions(database).Contains(definition)
+                ? definition
+                : database.FirstAction();
+            if (target == null)
+            {
+                return;
+            }
+
+            CombatActionEntry entry = null;
+            foreach (CombatActionEntry candidate in database.entryActions)
+            {
+                if (candidate != null && CombatInputActionNames.ExactMatches(candidate.inputAction, comboEditorInputAction))
+                {
+                    entry = candidate;
+                    break;
+                }
+            }
+
+            if (entry == null)
+            {
+                entry = new CombatActionEntry();
+                database.entryActions.Add(entry);
+            }
+
+            entry.inputAction = CombatInputActionNames.Normalize(comboEditorInputAction);
+            SetEntryTarget(entry, target);
+            entry.serverAuthoritative = true;
+            EditorUtility.SetDirty(database);
+            RefreshComboGraphView(database);
+        }
+
+        private void AddBranchToNextAction(CombatActionDatabase database, CombatAnimationDefinition source)
+        {
+            if (database == null || source == null)
+            {
+                return;
+            }
+
+            CombatAnimationDefinition target = GetFirstOtherAction(database, source);
+            if (target == null)
+            {
+                return;
+            }
+
+            source.EnsureActionLinks();
+            CombatActionLink link = new CombatActionLink
+            {
+                inputAction = CombatInputActionNames.Normalize(comboEditorInputAction),
+                triggerTag = "combat.combo.branch",
+                startFrame = Mathf.Max(0, comboEditorDefaultStartFrame),
+                endFrame = Mathf.Max(comboEditorDefaultStartFrame, comboEditorDefaultEndFrame),
+                serverAuthoritative = true
+            };
+            SetLinkTarget(link, target);
+            source.actionLinks.Add(link);
+            EditorUtility.SetDirty(source);
+            RefreshComboGraphView(database);
+        }
+
+        private CombatAnimationDefinition GetFirstOtherAction(CombatActionDatabase database, CombatAnimationDefinition source)
+        {
+            foreach (CombatAnimationDefinition action in GetDatabaseActions(database))
+            {
+                if (action != null && action != source)
+                {
+                    return action;
+                }
+            }
+
+            return null;
+        }
+
+        private static int GetActionFrameCount(CombatAnimationDefinition action)
+        {
+            if (action == null || action.clip == null)
+            {
+                return 0;
+            }
+
+            return Mathf.Max(1, Mathf.RoundToInt(action.clip.length * Mathf.Max(1, action.authoringFrameRate)));
+        }
+
+        private void SelectActionForAuthoring(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            definition = action;
+            clip = action.clip;
+            selectedMarkerIndex = -1;
+            normalizedTime = 0f;
+            mainScroll = Vector2.zero;
+            SampleClip();
+            Repaint();
+        }
+
+        private void RefreshComboGraphView(CombatActionDatabase database)
+        {
+            database?.RebuildLookup();
+            if (characterActionGraphView != null)
+            {
+                characterActionGraphView.SetDatabase(database, true);
+                characterActionGraphView.Refresh();
+            }
         }
 
         private void DrawMainAuthoringWorkbench()
@@ -508,7 +1358,7 @@ namespace ActToolkit.EditorTools
 
         private void DrawUtilityDrawers()
         {
-            showAssetDrawer = EditorGUILayout.Foldout(showAssetDrawer, "Asset Library and Binding", true);
+            showAssetDrawer = EditorGUILayout.Foldout(showAssetDrawer, "Action Clip and Definition", true);
             if (showAssetDrawer)
             {
                 DrawObjectBindingControls();
@@ -775,10 +1625,15 @@ namespace ActToolkit.EditorTools
         private void DrawObjectBindingControls()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Assets and Binding", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Action Asset Binding", EditorStyles.boldLabel);
 
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.LabelField("Preview Scene", SceneManager.GetActiveScene().name == PreviewSceneName ? PreviewSceneName : "Not active");
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField("Character Model", characterProfile == null ? null : characterProfile.modelPrefab, typeof(GameObject), false);
+            }
+
             definition = (CombatAnimationDefinition)EditorGUILayout.ObjectField("Definition", definition, typeof(CombatAnimationDefinition), false);
 
             if (definition != null && clip == null)
@@ -801,14 +1656,7 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(8f);
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.BeginVertical(GUILayout.MinWidth(280f));
-            DrawModelLibraryControls();
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.BeginVertical(GUILayout.MinWidth(280f));
-            DrawAnimationLibraryControls();
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.EndHorizontal();
+            DrawAnimationLibraryControls(AnimationLibraryContext.ActionAuthoring);
         }
 
         private string GetCharacterStatus()
@@ -824,6 +1672,12 @@ namespace ActToolkit.EditorTools
 
         private string GetModelStatus()
         {
+            if (characterProfile != null && characterProfile.modelPrefab != null)
+            {
+                string path = AssetDatabase.GetAssetPath(characterProfile.modelPrefab);
+                return string.IsNullOrWhiteSpace(path) ? characterProfile.modelPrefab.name : BuildModelDisplayName(path);
+            }
+
             if (selectedModelIndex >= 0 && selectedModelIndex < modelCandidates.Count)
             {
                 return modelCandidates[selectedModelIndex].label;
@@ -881,10 +1735,10 @@ namespace ActToolkit.EditorTools
             return marker.kind + " @ " + marker.StartFrame(clip, GetAuthoringFrameRate()) + "f";
         }
 
-        private void DrawModelLibraryControls()
+        private void DrawModelLibraryControls(bool bindToCharacterProfile)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Preview Model Library", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Character Model Library", EditorStyles.boldLabel);
 
             DefaultAsset currentFolderAsset = AssetDatabase.LoadAssetAtPath<DefaultAsset>(modelFolder);
             EditorGUI.BeginChangeCheck();
@@ -927,6 +1781,11 @@ namespace ActToolkit.EditorTools
             if (EditorGUI.EndChangeCheck())
             {
                 selectedModelIndex = nextModelIndex;
+                if (bindToCharacterProfile)
+                {
+                    AssignSelectedModelToCharacterProfile();
+                }
+
                 RefreshAnimationLibrary(false);
                 SchedulePreviewSceneRefresh(true);
             }
@@ -936,15 +1795,15 @@ namespace ActToolkit.EditorTools
                 EnsureSelectedPreviewModelInstance();
             }
 
-            EditorGUILayout.HelpBox("Selecting a model opens a dedicated preview Scene and keeps one temporary preview model there, so test scenes stay clean.", MessageType.None);
+            EditorGUILayout.HelpBox("Selecting a model here writes it to the character profile and refreshes the dedicated preview Scene.", MessageType.None);
 
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawAnimationLibraryControls()
+        private void DrawAnimationLibraryControls(AnimationLibraryContext context)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Animation Library", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(context == AnimationLibraryContext.ActionAuthoring ? "Action Animation Library" : "Compatible Animation Library", EditorStyles.boldLabel);
 
             DefaultAsset currentFolderAsset = AssetDatabase.LoadAssetAtPath<DefaultAsset>(animationFolder);
             EditorGUI.BeginChangeCheck();
@@ -994,7 +1853,14 @@ namespace ActToolkit.EditorTools
             if (EditorGUI.EndChangeCheck())
             {
                 selectedAnimationIndex = nextAnimationIndex;
-                UseSelectedAnimationClip();
+                if (context == AnimationLibraryContext.ActionAuthoring)
+                {
+                    UseSelectedAnimationClip();
+                }
+                else
+                {
+                    AssignSelectedAnimationToDefaultClip();
+                }
             }
             else
             {
@@ -1002,6 +1868,64 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void AssignSelectedModelToCharacterProfile()
+        {
+            if (characterProfile == null)
+            {
+                return;
+            }
+
+            GameObject selectedModel = LoadSelectedModelAsset();
+            if (selectedModel == null)
+            {
+                return;
+            }
+
+            characterProfile.modelPrefab = selectedModel;
+            AutoAssignAvatarFromProfileModel(true);
+            SaveCharacterProfileChanges(true, false);
+        }
+
+        private void SelectCurrentDefaultClipInLibrary()
+        {
+            AnimationClip target = characterProfile == null
+                ? null
+                : defaultClipSlot == CharacterDefaultClipSlot.Idle
+                    ? characterProfile.idleClip
+                    : characterProfile.moveClip;
+            int index = FindAnimationCandidateIndex(target);
+            if (index >= 0)
+            {
+                selectedAnimationIndex = index;
+            }
+        }
+
+        private void AssignSelectedAnimationToDefaultClip()
+        {
+            if (characterProfile == null)
+            {
+                return;
+            }
+
+            AnimationClip selectedClip = LoadSelectedAnimationClip();
+            if (selectedClip == null)
+            {
+                RefreshAnimationLibrary(false);
+                return;
+            }
+
+            if (defaultClipSlot == CharacterDefaultClipSlot.Idle)
+            {
+                characterProfile.idleClip = selectedClip;
+            }
+            else
+            {
+                characterProfile.moveClip = selectedClip;
+            }
+
+            SaveCharacterProfileChanges(false, false);
         }
 
         private void DrawPreviewControls()
@@ -3825,9 +4749,10 @@ namespace ActToolkit.EditorTools
         private const string DefaultDatabasePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CombatActionDatabase.asset";
         private const float CanvasWidth = 2200f;
         private const float CanvasHeight = 1400f;
-        private const float NodeWidth = 190f;
-        private const float NodeHeight = 92f;
-        private const float PortSize = 12f;
+        private const float NodeWidth = 210f;
+        private const float NodeHeight = 118f;
+        private const float PortWidth = 46f;
+        private const float PortHeight = 20f;
 
         private readonly List<GraphNode> nodes = new List<GraphNode>();
         private readonly Dictionary<CombatAnimationDefinition, GraphNode> nodeLookup = new Dictionary<CombatAnimationDefinition, GraphNode>();
@@ -3848,10 +4773,12 @@ namespace ActToolkit.EditorTools
         private CombatActionLink selectedLink;
         private CombatActionEntry selectedEntry;
         private readonly Action repaint;
+        private readonly Action<CombatAnimationDefinition> openAction;
 
-        public CombatComboGraphView(Action repaint)
+        public CombatComboGraphView(Action repaint, Action<CombatAnimationDefinition> openAction = null)
         {
             this.repaint = repaint;
+            this.openAction = openAction;
         }
 
         public CombatActionDatabase Database => database;
@@ -3926,15 +4853,16 @@ namespace ActToolkit.EditorTools
             }
 
             GUILayout.Space(10f);
-            GUILayout.Label("New Link", GUILayout.Width(56f));
-            selectedInputAction = DrawInputActionToolbarPopup(selectedInputAction, GUILayout.Width(150f));
+            GUILayout.Label("Input Node", GUILayout.Width(72f));
+            selectedInputAction = DrawInputActionToolbarPopup(selectedInputAction, GUILayout.Width(190f));
+            DrawInputSequencePill(selectedInputAction, string.Empty, false);
             GUILayout.Label("Window", GUILayout.Width(48f));
             defaultStartFrame = Mathf.Max(0, EditorGUILayout.IntField(defaultStartFrame, GUILayout.Width(42f)));
             GUILayout.Label("-", GUILayout.Width(10f));
             defaultEndFrame = Mathf.Max(defaultStartFrame, EditorGUILayout.IntField(defaultEndFrame, GUILayout.Width(42f)));
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Drag from a right port to a left port.", EditorStyles.miniLabel);
+            GUILayout.Label("Drag from an output port into an action.", EditorStyles.miniLabel);
             EditorGUILayout.EndHorizontal();
         }
 
@@ -3942,7 +4870,7 @@ namespace ActToolkit.EditorTools
         {
             if (embedded)
             {
-                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true), GUILayout.Height(430f));
+                EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true), GUILayout.Height(560f));
             }
             else
             {
@@ -3952,7 +4880,7 @@ namespace ActToolkit.EditorTools
             try
             {
                 Rect outerRect = embedded
-                    ? GUILayoutUtility.GetRect(200f, 10000f, 360f, 360f, GUILayout.ExpandWidth(true), GUILayout.Height(360f))
+                    ? GUILayoutUtility.GetRect(200f, 10000f, 480f, 500f, GUILayout.ExpandWidth(true), GUILayout.Height(500f))
                     : GUILayoutUtility.GetRect(200f, 10000f, 200f, 10000f, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
                 Rect canvasRect = new Rect(0f, 0f, CanvasWidth, CanvasHeight);
 
@@ -3968,10 +4896,12 @@ namespace ActToolkit.EditorTools
                         DrawDragConnection(Event.current.mousePosition);
                     }
 
-                    if (database != null)
-                    {
-                        entryNodeRect = GUI.Window(1, entryNodeRect, DrawEntryNodeWindow, "Entry");
-                    }
+                    HandlePortMouseDown(Event.current);
+
+                if (database != null)
+                {
+                    entryNodeRect = GUI.Window(1, entryNodeRect, DrawEntryNodeWindow, "Idle / Neutral");
+                }
 
                     for (int i = 0; i < nodes.Count; i++)
                     {
@@ -4152,6 +5082,11 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUILayout.Space(8f);
+            if (GUILayout.Button("Open Action Detail", GUILayout.Height(26f)))
+            {
+                OpenAction(inspectedDefinition);
+            }
+
             if (GUILayout.Button("Select Asset", GUILayout.Height(26f)))
             {
                 Selection.activeObject = inspectedDefinition;
@@ -4168,8 +5103,9 @@ namespace ActToolkit.EditorTools
             else
             {
                 database.EnsureEntryActions();
-                GUILayout.Label(database.name, EditorStyles.miniBoldLabel);
-                GUILayout.Label(database.entryActions.Count + " entry links", EditorStyles.miniLabel);
+                GUILayout.Label("No action playing", EditorStyles.miniBoldLabel);
+                GUILayout.Label(database.entryActions.Count + " starter inputs", EditorStyles.miniLabel);
+                GUILayout.Label("Drag output to an action", EditorStyles.miniLabel);
                 if (GUILayout.Button("Select"))
                 {
                     Selection.activeObject = database;
@@ -4188,9 +5124,13 @@ namespace ActToolkit.EditorTools
             }
 
             GUILayout.Label(ShortLabel(action.actionId), EditorStyles.miniBoldLabel);
-            GUILayout.Label(action.clip == null ? "No clip" : action.clip.name, EditorStyles.miniLabel);
+            GUILayout.Label(action.clip == null ? "No clip" : ShortLabel(action.clip.name), EditorStyles.miniLabel);
             action.EnsureActionLinks();
-            GUILayout.Label(action.actionLinks.Count + " links", EditorStyles.miniLabel);
+            GUILayout.Label(action.actionLinks.Count + " outgoing branches", EditorStyles.miniLabel);
+            if (GUILayout.Button("Edit Action", GUILayout.Height(22f)))
+            {
+                OpenAction(action);
+            }
 
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 22f));
         }
@@ -4214,7 +5154,7 @@ namespace ActToolkit.EditorTools
                     }
 
                     DrawConnection(GetEntryOutputPort().center, GetInputPort(targetNode.rect).center, InputColor(entry.inputAction), selectedEntry == entry);
-                    DrawConnectionButton(GetConnectionMidpoint(GetEntryOutputPort().center, GetInputPort(targetNode.rect).center), ShortLabel(entry.inputAction), () =>
+                    DrawConnectionNode(GetConnectionMidpoint(GetEntryOutputPort().center, GetInputPort(targetNode.rect).center), entry.inputAction, "start", selectedEntry == entry, () =>
                     {
                         selectedEntry = entry;
                         selectedLink = null;
@@ -4249,7 +5189,7 @@ namespace ActToolkit.EditorTools
                     Vector2 start = GetOutputPort(sourceNode.rect).center;
                     Vector2 end = GetInputPort(targetNode.rect).center;
                     DrawConnection(start, end, InputColor(link.inputAction), selectedLink == link);
-                    DrawConnectionButton(GetConnectionMidpoint(start, end), ShortLabel(link.inputAction) + " " + link.startFrame + "-" + link.endFrame + "f", () => SelectLink(source, link));
+                    DrawConnectionNode(GetConnectionMidpoint(start, end), link.inputAction, link.startFrame + "-" + link.endFrame + "f", selectedLink == link, () => SelectLink(source, link));
                 }
             }
         }
@@ -4269,13 +5209,36 @@ namespace ActToolkit.EditorTools
         {
             if (database != null)
             {
-                DrawPort(GetEntryOutputPort(), InputColor(selectedInputAction));
+                DrawPort(GetEntryOutputPort(), InputColor(selectedInputAction), "OUT");
             }
 
             foreach (GraphNode node in nodes)
             {
-                DrawPort(GetInputPort(node.rect), new Color(0.38f, 0.62f, 0.88f, 1f));
-                DrawPort(GetOutputPort(node.rect), InputColor(selectedInputAction));
+                DrawPort(GetInputPort(node.rect), new Color(0.38f, 0.62f, 0.88f, 1f), "IN");
+                DrawPort(GetOutputPort(node.rect), InputColor(selectedInputAction), "OUT");
+            }
+        }
+
+        private void HandlePortMouseDown(Event evt)
+        {
+            if (evt.type != EventType.MouseDown || evt.button != 0)
+            {
+                return;
+            }
+
+            if (database != null && IsInOutputHotZone(entryNodeRect, evt.mousePosition))
+            {
+                BeginDragLink(true, null, evt);
+                return;
+            }
+
+            foreach (GraphNode node in nodes)
+            {
+                if (IsInOutputHotZone(node.rect, evt.mousePosition))
+                {
+                    BeginDragLink(false, node.definition, evt);
+                    return;
+                }
             }
         }
 
@@ -4284,7 +5247,7 @@ namespace ActToolkit.EditorTools
             dragMousePosition = evt.mousePosition;
             if (evt.type == EventType.MouseDown && evt.button == 0)
             {
-                if (database != null && GetEntryOutputPort().Contains(evt.mousePosition))
+                if (database != null && IsInOutputHotZone(entryNodeRect, evt.mousePosition))
                 {
                     BeginDragLink(true, null, evt);
                     return;
@@ -4292,7 +5255,7 @@ namespace ActToolkit.EditorTools
 
                 foreach (GraphNode node in nodes)
                 {
-                    if (GetOutputPort(node.rect).Contains(evt.mousePosition))
+                    if (IsInOutputHotZone(node.rect, evt.mousePosition))
                     {
                         BeginDragLink(false, node.definition, evt);
                         return;
@@ -4307,6 +5270,11 @@ namespace ActToolkit.EditorTools
                         selectedLink = null;
                         selectedLinkSource = null;
                         selectedEntry = null;
+                        if (evt.clickCount > 1)
+                        {
+                            OpenAction(node.definition);
+                        }
+
                         RequestRepaint();
                         return;
                     }
@@ -4347,7 +5315,7 @@ namespace ActToolkit.EditorTools
             GraphNode target = null;
             foreach (GraphNode node in nodes)
             {
-                if (GetInputPort(node.rect).Contains(mousePosition) || node.rect.Contains(mousePosition))
+                if (IsInInputHotZone(node.rect, mousePosition) || node.rect.Contains(mousePosition))
                 {
                     target = node;
                     break;
@@ -4377,6 +5345,23 @@ namespace ActToolkit.EditorTools
             repaint?.Invoke();
         }
 
+        private void OpenAction(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            if (openAction != null)
+            {
+                openAction.Invoke(action);
+                return;
+            }
+
+            Selection.activeObject = action;
+            EditorGUIUtility.PingObject(action);
+        }
+
         private void CreateOrUpdateEntry(CombatAnimationDefinition target)
         {
             if (database == null || target == null)
@@ -4388,7 +5373,7 @@ namespace ActToolkit.EditorTools
             CombatActionEntry entry = null;
             foreach (CombatActionEntry candidate in database.entryActions)
             {
-                if (candidate != null && CombatInputActionNames.Matches(candidate.inputAction, selectedInputAction))
+                if (candidate != null && CombatInputActionNames.ExactMatches(candidate.inputAction, selectedInputAction))
                 {
                     entry = candidate;
                     break;
@@ -4429,7 +5414,7 @@ namespace ActToolkit.EditorTools
                     continue;
                 }
 
-                bool sameInput = CombatInputActionNames.Matches(candidate.inputAction, selectedInputAction);
+                bool sameInput = CombatInputActionNames.ExactMatches(candidate.inputAction, selectedInputAction);
                 bool sameTarget = candidate.targetDefinition == target || string.Equals(candidate.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase);
                 if (sameInput && sameTarget)
                 {
@@ -4577,17 +5562,35 @@ namespace ActToolkit.EditorTools
 
         private static Rect GetInputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.x - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
+            return new Rect(nodeRect.x - PortWidth, nodeRect.y + nodeRect.height * 0.5f - PortHeight * 0.5f, PortWidth, PortHeight);
         }
 
         private static Rect GetOutputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.xMax - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
+            return new Rect(nodeRect.xMax, nodeRect.y + nodeRect.height * 0.5f - PortHeight * 0.5f, PortWidth, PortHeight);
         }
 
         private Rect GetEntryOutputPort()
         {
             return GetOutputPort(entryNodeRect);
+        }
+
+        private static bool IsInInputHotZone(Rect nodeRect, Vector2 point)
+        {
+            Rect port = GetInputPort(nodeRect);
+            return ExpandRect(port, 8f).Contains(point);
+        }
+
+        private static bool IsInOutputHotZone(Rect nodeRect, Vector2 point)
+        {
+            Rect port = GetOutputPort(nodeRect);
+            Rect rightEdge = new Rect(nodeRect.xMax - 18f, nodeRect.y + 24f, 18f + PortWidth + 10f, nodeRect.height - 32f);
+            return ExpandRect(port, 8f).Contains(point) || rightEdge.Contains(point);
+        }
+
+        private static Rect ExpandRect(Rect rect, float amount)
+        {
+            return new Rect(rect.x - amount, rect.y - amount, rect.width + amount * 2f, rect.height + amount * 2f);
         }
 
         private static Vector2 GetConnectionMidpoint(Vector2 start, Vector2 end)
@@ -4611,18 +5614,79 @@ namespace ActToolkit.EditorTools
             Handles.color = previousColor;
         }
 
-        private static void DrawConnectionButton(Vector2 center, string label, Action onClick)
+        private static void DrawConnectionNode(Vector2 center, string inputAction, string detail, bool selected, Action onClick)
         {
-            Rect rect = new Rect(center.x - 58f, center.y - 10f, 116f, 20f);
-            if (GUI.Button(rect, label, EditorStyles.miniButton))
+            Rect rect = new Rect(center.x - 82f, center.y - 18f, 164f, 36f);
+            Color previousBackground = GUI.backgroundColor;
+            GUI.backgroundColor = selected ? new Color(1f, 0.85f, 0.28f, 1f) : new Color(0.30f, 0.32f, 0.34f, 1f);
+            if (GUI.Button(rect, GUIContent.none, EditorStyles.helpBox))
             {
                 onClick?.Invoke();
             }
+
+            GUI.backgroundColor = previousBackground;
+
+            GUILayout.BeginArea(rect);
+            GUILayout.BeginHorizontal();
+            DrawInputSequencePill(inputAction, detail, selected);
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
         }
 
-        private static void DrawPort(Rect rect, Color color)
+        private static void DrawInputSequencePill(string inputAction, string detail, bool selected)
+        {
+            CombatInputActionNames.TryDescribeSequence(inputAction, out string stickToken, out string buttonToken, out string actionToken);
+            Color previousBackground = GUI.backgroundColor;
+
+            if (!string.IsNullOrWhiteSpace(stickToken))
+            {
+                GUI.backgroundColor = new Color(0.22f, 0.40f, 0.62f, 1f);
+                GUILayout.Box(stickToken, EditorStyles.miniButton, GUILayout.Width(48f), GUILayout.Height(22f));
+                GUI.backgroundColor = previousBackground;
+                GUILayout.Label("+", EditorStyles.miniBoldLabel, GUILayout.Width(10f));
+            }
+
+            GUI.backgroundColor = InputButtonColor(buttonToken);
+            GUILayout.Box(buttonToken, EditorStyles.miniButton, GUILayout.Width(32f), GUILayout.Height(22f));
+            GUI.backgroundColor = previousBackground;
+
+            string label = string.IsNullOrWhiteSpace(detail) ? actionToken : detail;
+            GUILayout.Label(label, selected ? EditorStyles.whiteMiniLabel : EditorStyles.miniBoldLabel, GUILayout.Width(56f), GUILayout.Height(22f));
+        }
+
+        private static Color InputButtonColor(string buttonToken)
+        {
+            switch (buttonToken)
+            {
+                case "□":
+                    return new Color(0.32f, 0.55f, 0.95f, 1f);
+                case "△":
+                    return new Color(0.34f, 0.70f, 0.48f, 1f);
+                case "○":
+                    return new Color(0.90f, 0.38f, 0.38f, 1f);
+                case "×":
+                    return new Color(0.60f, 0.48f, 0.95f, 1f);
+                default:
+                    return new Color(0.42f, 0.42f, 0.42f, 1f);
+            }
+        }
+
+        private static void DrawPort(Rect rect, Color color, string label)
         {
             EditorGUI.DrawRect(rect, color);
+            Color previousColor = GUI.color;
+            GUI.color = Color.white;
+            GUI.Label(rect, label, CenteredMiniBoldLabel());
+            GUI.color = previousColor;
+        }
+
+        private static GUIStyle CenteredMiniBoldLabel()
+        {
+            GUIStyle style = new GUIStyle(EditorStyles.miniBoldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter
+            };
+            return style;
         }
 
         private static void DrawGrid(Rect rect, float spacing, Color color)
@@ -4648,12 +5712,12 @@ namespace ActToolkit.EditorTools
         private static Color InputColor(string inputAction)
         {
             string normalized = CombatInputActionNames.Normalize(inputAction);
-            if (string.Equals(normalized, CombatInputActionNames.HeavyAttack, StringComparison.OrdinalIgnoreCase))
+            if (normalized.Contains("Attack.Heavy", StringComparison.OrdinalIgnoreCase))
             {
                 return new Color(0.95f, 0.48f, 0.26f, 1f);
             }
 
-            if (string.Equals(normalized, CombatInputActionNames.Dodge, StringComparison.OrdinalIgnoreCase))
+            if (normalized.Contains("Dodge", StringComparison.OrdinalIgnoreCase))
             {
                 return new Color(0.34f, 0.78f, 0.88f, 1f);
             }
