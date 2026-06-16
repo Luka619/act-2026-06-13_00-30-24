@@ -26,7 +26,8 @@ namespace ActToolkit.EditorTools
         private enum EditorPage
         {
             CharacterSetup,
-            ActionAuthoring
+            ComboTable,
+            DefinitionEditor
         }
 
         private enum CharacterDefaultClipSlot
@@ -75,7 +76,7 @@ namespace ActToolkit.EditorTools
         private bool showRootMotionDrawer;
         private bool showActionLinksDrawer;
         private bool showAdvancedComboGraph;
-        private EditorPage currentPage = EditorPage.ActionAuthoring;
+        private EditorPage currentPage = EditorPage.ComboTable;
         private CharacterDefaultClipSlot defaultClipSlot = CharacterDefaultClipSlot.Idle;
         private string comboEditorInputAction = CombatInputActionNames.LightAttack;
         private int comboEditorDefaultStartFrame = 12;
@@ -109,9 +110,9 @@ namespace ActToolkit.EditorTools
             modelFolder = EditorPrefs.GetString(ModelFolderPrefsKey, ActToolkitEditorUtilities.DefaultModelFolder);
             animationFolder = EditorPrefs.GetString(AnimationFolderPrefsKey, ActToolkitEditorUtilities.DefaultPreviewClipFolder);
             currentPage = (EditorPage)Mathf.Clamp(
-                EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ActionAuthoring),
+                EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ComboTable),
                 (int)EditorPage.CharacterSetup,
-                (int)EditorPage.ActionAuthoring);
+                (int)EditorPage.DefinitionEditor);
             characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring);
             characterActionGraphView.Initialize();
             LoadCharacterProfileFromPrefs();
@@ -177,7 +178,7 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.Space(4f);
             DrawPageNavigator();
 
-            if (currentPage == EditorPage.ActionAuthoring)
+            if (currentPage == EditorPage.DefinitionEditor)
             {
                 EditorGUILayout.Space(4f);
                 DrawStatusHeader();
@@ -260,17 +261,26 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             GUILayout.Label("Work Area", GUILayout.Width(72f));
             DrawPageButton(EditorPage.CharacterSetup, "Character Setup", 132f);
-            DrawPageButton(EditorPage.ActionAuthoring, "Action Authoring", 136f);
+            DrawPageButton(EditorPage.ComboTable, "Combo Table", 112f);
+            DrawPageButton(EditorPage.DefinitionEditor, "Definition Editor", 142f);
             GUILayout.FlexibleSpace();
 
-            if (currentPage == EditorPage.ActionAuthoring && characterProfile != null)
+            if (characterProfile != null && currentPage != EditorPage.CharacterSetup)
             {
                 using (new EditorGUI.DisabledScope(true))
                 {
-                    EditorGUILayout.ObjectField(characterProfile.modelPrefab, typeof(GameObject), false, GUILayout.Width(220f));
+                    UnityEngine.Object contextObject = currentPage == EditorPage.ComboTable
+                        ? characterProfile.comboTable
+                        : characterProfile.modelPrefab;
+                    Type contextType = currentPage == EditorPage.ComboTable
+                        ? typeof(CombatActionDatabase)
+                        : typeof(GameObject);
+                    EditorGUILayout.ObjectField(contextObject, contextType, false, GUILayout.Width(220f));
                 }
 
-                GUILayout.Label("model comes from the selected character", EditorStyles.miniLabel);
+                GUILayout.Label(currentPage == EditorPage.ComboTable
+                    ? "combo table comes from the selected character"
+                    : "model comes from the selected character", EditorStyles.miniLabel);
             }
 
             EditorGUILayout.EndHorizontal();
@@ -284,7 +294,7 @@ namespace ActToolkit.EditorTools
             {
                 currentPage = page;
                 EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
-                if (currentPage == EditorPage.ActionAuthoring)
+                if (currentPage == EditorPage.DefinitionEditor)
                 {
                     ApplyCharacterProfileToEditor(true);
                 }
@@ -539,9 +549,23 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
+            if (currentPage == EditorPage.ComboTable)
+            {
+                DrawComboTablePage();
+                return;
+            }
+
+            DrawDefinitionEditorPage();
+        }
+
+        private void DrawComboTablePage()
+        {
+            DrawCharacterActionGraph(false);
+        }
+
+        private void DrawDefinitionEditorPage()
+        {
             DrawMainAuthoringWorkbench();
-            EditorGUILayout.Space(8f);
-            DrawCharacterActionGraph();
             EditorGUILayout.Space(8f);
             DrawUtilityDrawers();
         }
@@ -625,7 +649,7 @@ namespace ActToolkit.EditorTools
             }
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.HelpBox("Action Authoring reads these values from the selected character. Once they are set here, you do not need to pick the model again while editing moves.", MessageType.None);
+            EditorGUILayout.HelpBox("Combo Table and Definition Editor read these values from the selected character. Once they are set here, you do not need to pick the model again while editing moves.", MessageType.None);
             EditorGUILayout.EndVertical();
         }
 
@@ -705,12 +729,15 @@ namespace ActToolkit.EditorTools
             }
         }
 
-        private void DrawCharacterActionGraph()
+        private void DrawCharacterActionGraph(bool showFoldout)
         {
-            showCharacterActionGraph = EditorGUILayout.Foldout(showCharacterActionGraph, "Combo Table Editor", true);
-            if (!showCharacterActionGraph)
+            if (showFoldout)
             {
-                return;
+                showCharacterActionGraph = EditorGUILayout.Foldout(showCharacterActionGraph, "Combo Table Editor", true);
+                if (!showCharacterActionGraph)
+                {
+                    return;
+                }
             }
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -751,7 +778,7 @@ namespace ActToolkit.EditorTools
 
             EditorGUILayout.EndHorizontal();
 
-            EditorGUILayout.HelpBox("Build the combo as nodes: pick the input sequence in the toolbar, then drag Idle or an Action output into another Action. The input pill on each connection is the rule you can select and edit.", MessageType.None);
+            EditorGUILayout.HelpBox("Author the combo table first, then open an action node to edit its CombatAnimationDefinition.", MessageType.None);
 
             if (characterActionGraphView == null)
             {
@@ -838,7 +865,7 @@ namespace ActToolkit.EditorTools
                 }
 
                 entry.serverAuthoritative = GUILayout.Toggle(entry.serverAuthoritative, "Server", GUILayout.Width(68f));
-                if (GUILayout.Button("Open Action Detail", GUILayout.Width(126f)))
+                if (GUILayout.Button("Edit Definition", GUILayout.Width(112f)))
                 {
                     SelectActionForAuthoring(ResolveEntryTarget(database, entry));
                 }
@@ -922,7 +949,7 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(ActionChoiceLabel(action), EditorStyles.boldLabel);
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Edit Action", GUILayout.Width(86f)))
+            if (GUILayout.Button("Edit Definition", GUILayout.Width(104f)))
             {
                 SelectActionForAuthoring(action);
             }
@@ -987,7 +1014,7 @@ namespace ActToolkit.EditorTools
                     SetLinkTarget(link, target);
                 }
 
-                if (GUILayout.Button("Open Action Detail", GUILayout.Width(126f)))
+                if (GUILayout.Button("Edit Definition", GUILayout.Width(112f)))
                 {
                     SelectActionForAuthoring(ResolveLinkTarget(database, link));
                 }
@@ -1318,6 +1345,8 @@ namespace ActToolkit.EditorTools
             selectedMarkerIndex = -1;
             normalizedTime = 0f;
             mainScroll = Vector2.zero;
+            currentPage = EditorPage.DefinitionEditor;
+            EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
             SampleClip();
             Repaint();
         }
@@ -2425,13 +2454,15 @@ namespace ActToolkit.EditorTools
             string normalized = CombatInputActionNames.Normalize(inputAction);
             int selectedIndex = Array.IndexOf(CombatInputActionNames.AuthoringNames, normalized);
             string[] labels = BuildInputActionPopupLabels(inputAction, selectedIndex);
-            int nextIndex = EditorGUILayout.Popup(label, selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels);
+            int nextIndex = EditorGUILayout.Popup(label + " Preset", selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels);
+            string nextValue = string.IsNullOrWhiteSpace(inputAction) ? normalized : inputAction.Trim();
             if (nextIndex >= 0 && nextIndex < CombatInputActionNames.AuthoringNames.Length)
             {
-                return CombatInputActionNames.AuthoringNames[nextIndex];
+                nextValue = CombatInputActionNames.AuthoringNames[nextIndex];
             }
 
-            return EditorGUILayout.TextField("Custom Input", string.IsNullOrWhiteSpace(inputAction) ? normalized : inputAction);
+            nextValue = EditorGUILayout.TextField(label + " Sequence", nextValue);
+            return CombatInputActionNames.Normalize(nextValue);
         }
 
         private static string[] BuildInputActionPopupLabels(string inputAction, int selectedIndex)
@@ -4749,17 +4780,19 @@ namespace ActToolkit.EditorTools
         private const string DefaultDatabasePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CombatActionDatabase.asset";
         private const float CanvasWidth = 2200f;
         private const float CanvasHeight = 1400f;
-        private const float NodeWidth = 210f;
-        private const float NodeHeight = 118f;
-        private const float PortWidth = 46f;
-        private const float PortHeight = 20f;
+        private const float NodeWidth = 260f;
+        private const float NodeHeight = 156f;
+        private const float PortSize = 14f;
+        private static readonly Color InputPortColor = new Color(0.36f, 0.62f, 0.88f, 1f);
+        private static readonly Color OutputPortColor = new Color(0.72f, 0.74f, 0.76f, 1f);
+        private static readonly Color EntryPortColor = new Color(0.86f, 0.72f, 0.32f, 1f);
 
         private readonly List<GraphNode> nodes = new List<GraphNode>();
         private readonly Dictionary<CombatAnimationDefinition, GraphNode> nodeLookup = new Dictionary<CombatAnimationDefinition, GraphNode>();
         private readonly Dictionary<string, GraphNode> idLookup = new Dictionary<string, GraphNode>(StringComparer.OrdinalIgnoreCase);
         private Vector2 graphScroll;
         private Vector2 inspectorScroll;
-        private Rect entryNodeRect = new Rect(24f, 120f, 170f, 78f);
+        private Rect entryNodeRect = new Rect(24f, 120f, 220f, 118f);
         private CombatActionDatabase database;
         private string selectedInputAction = CombatInputActionNames.LightAttack;
         private int defaultStartFrame = 12;
@@ -4767,6 +4800,9 @@ namespace ActToolkit.EditorTools
         private bool draggingLink;
         private bool draggingFromEntry;
         private CombatAnimationDefinition dragSourceDefinition;
+        private string dragInputAction = CombatInputActionNames.LightAttack;
+        private CombatActionEntry dragExistingEntry;
+        private CombatActionLink dragExistingLink;
         private Vector2 dragMousePosition;
         private CombatAnimationDefinition selectedDefinition;
         private CombatAnimationDefinition selectedLinkSource;
@@ -4853,8 +4889,9 @@ namespace ActToolkit.EditorTools
             }
 
             GUILayout.Space(10f);
-            GUILayout.Label("Input Node", GUILayout.Width(72f));
-            selectedInputAction = DrawInputActionToolbarPopup(selectedInputAction, GUILayout.Width(190f));
+            GUILayout.Label("New Link Input", GUILayout.Width(92f));
+            selectedInputAction = DrawInputActionToolbarPopup(selectedInputAction, GUILayout.Width(150f));
+            selectedInputAction = EditorGUILayout.TextField(selectedInputAction, EditorStyles.toolbarTextField, GUILayout.Width(180f));
             DrawInputSequencePill(selectedInputAction, string.Empty, false);
             GUILayout.Label("Window", GUILayout.Width(48f));
             defaultStartFrame = Mathf.Max(0, EditorGUILayout.IntField(defaultStartFrame, GUILayout.Width(42f)));
@@ -4862,7 +4899,7 @@ namespace ActToolkit.EditorTools
             defaultEndFrame = Mathf.Max(defaultStartFrame, EditorGUILayout.IntField(defaultEndFrame, GUILayout.Width(42f)));
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Drag from an output port into an action.", EditorStyles.miniLabel);
+            GUILayout.Label("Drag output to create; drag connected input to retarget.", EditorStyles.miniLabel);
             EditorGUILayout.EndHorizontal();
         }
 
@@ -4889,6 +4926,7 @@ namespace ActToolkit.EditorTools
                 {
                     DrawGrid(canvasRect, 24f, new Color(0f, 0f, 0f, 0.18f));
                     DrawGrid(canvasRect, 120f, new Color(0f, 0f, 0f, 0.28f));
+                    TryHandlePortMouseDown(Event.current);
                     DrawConnections();
 
                     if (draggingLink)
@@ -4896,12 +4934,10 @@ namespace ActToolkit.EditorTools
                         DrawDragConnection(Event.current.mousePosition);
                     }
 
-                    HandlePortMouseDown(Event.current);
-
-                if (database != null)
-                {
-                    entryNodeRect = GUI.Window(1, entryNodeRect, DrawEntryNodeWindow, "Idle / Neutral");
-                }
+                    if (database != null)
+                    {
+                        entryNodeRect = GUI.Window(1, entryNodeRect, DrawEntryNodeWindow, "Entry");
+                    }
 
                     for (int i = 0; i < nodes.Count; i++)
                     {
@@ -5082,7 +5118,7 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUILayout.Space(8f);
-            if (GUILayout.Button("Open Action Detail", GUILayout.Height(26f)))
+            if (GUILayout.Button("Edit Definition", GUILayout.Height(26f)))
             {
                 OpenAction(inspectedDefinition);
             }
@@ -5103,10 +5139,12 @@ namespace ActToolkit.EditorTools
             else
             {
                 database.EnsureEntryActions();
-                GUILayout.Label("No action playing", EditorStyles.miniBoldLabel);
-                GUILayout.Label(database.entryActions.Count + " starter inputs", EditorStyles.miniLabel);
-                GUILayout.Label("Drag output to an action", EditorStyles.miniLabel);
-                if (GUILayout.Button("Select"))
+                GUILayout.Label("Initial Node", EditorStyles.boldLabel);
+                GUILayout.Label("Source: no active definition", EditorStyles.miniLabel);
+                GUILayout.Label("Starter Links: " + database.entryActions.Count, EditorStyles.miniLabel);
+                GUILayout.Label("Combo Table: " + ShortLabel(database.name), EditorStyles.miniLabel);
+                GUILayout.Space(4f);
+                if (GUILayout.Button("Select Combo Table", GUILayout.Height(22f)))
                 {
                     Selection.activeObject = database;
                 }
@@ -5123,11 +5161,19 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
-            GUILayout.Label(ShortLabel(action.actionId), EditorStyles.miniBoldLabel);
-            GUILayout.Label(action.clip == null ? "No clip" : ShortLabel(action.clip.name), EditorStyles.miniLabel);
             action.EnsureActionLinks();
-            GUILayout.Label(action.actionLinks.Count + " outgoing branches", EditorStyles.miniLabel);
-            if (GUILayout.Button("Edit Action", GUILayout.Height(22f)))
+            int frameCount = action.clip == null
+                ? 0
+                : Mathf.Max(1, Mathf.RoundToInt(action.clip.length * Mathf.Max(1, action.authoringFrameRate)));
+            int markerCount = action.markers == null ? 0 : action.markers.Count;
+
+            GUILayout.Label(ShortLabel(action.actionId), EditorStyles.boldLabel);
+            GUILayout.Label("Definition: " + ShortLabel(action.name), EditorStyles.miniLabel);
+            GUILayout.Label("State: " + ShortLabel(string.IsNullOrWhiteSpace(action.stateName) ? "None" : action.stateName), EditorStyles.miniLabel);
+            GUILayout.Label("Clip: " + (action.clip == null ? "None" : ShortLabel(action.clip.name)), EditorStyles.miniLabel);
+            GUILayout.Label("Frames: " + frameCount + " @ " + Mathf.Max(1, action.authoringFrameRate) + " fps", EditorStyles.miniLabel);
+            GUILayout.Label("Markers: " + markerCount + "  Links: " + action.actionLinks.Count, EditorStyles.miniLabel);
+            if (GUILayout.Button("Edit Definition", GUILayout.Height(22f)))
             {
                 OpenAction(action);
             }
@@ -5202,34 +5248,34 @@ namespace ActToolkit.EditorTools
                     ? GetOutputPort(sourceNode.rect).center
                     : mousePosition;
 
-            DrawConnection(start, mousePosition, InputColor(selectedInputAction), true);
+            DrawConnection(start, mousePosition, InputColor(dragInputAction), true);
         }
 
         private void DrawPorts()
         {
             if (database != null)
             {
-                DrawPort(GetEntryOutputPort(), InputColor(selectedInputAction), "OUT");
+                DrawPort(GetEntryOutputPort(), EntryPortColor);
             }
 
             foreach (GraphNode node in nodes)
             {
-                DrawPort(GetInputPort(node.rect), new Color(0.38f, 0.62f, 0.88f, 1f), "IN");
-                DrawPort(GetOutputPort(node.rect), InputColor(selectedInputAction), "OUT");
+                DrawPort(GetInputPort(node.rect), InputPortColor);
+                DrawPort(GetOutputPort(node.rect), OutputPortColor);
             }
         }
 
-        private void HandlePortMouseDown(Event evt)
+        private bool TryHandlePortMouseDown(Event evt)
         {
             if (evt.type != EventType.MouseDown || evt.button != 0)
             {
-                return;
+                return false;
             }
 
             if (database != null && IsInOutputHotZone(entryNodeRect, evt.mousePosition))
             {
                 BeginDragLink(true, null, evt);
-                return;
+                return true;
             }
 
             foreach (GraphNode node in nodes)
@@ -5237,9 +5283,56 @@ namespace ActToolkit.EditorTools
                 if (IsInOutputHotZone(node.rect, evt.mousePosition))
                 {
                     BeginDragLink(false, node.definition, evt);
-                    return;
+                    return true;
                 }
             }
+
+            foreach (GraphNode node in nodes)
+            {
+                if (TryBeginRetargetFromInput(node, evt))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryBeginRetargetFromInput(GraphNode targetNode, Event evt)
+        {
+            if (targetNode == null || targetNode.definition == null || !IsInInputHotZone(targetNode.rect, evt.mousePosition))
+            {
+                return false;
+            }
+
+            if (selectedEntry != null && EntryTargets(selectedEntry, targetNode.definition))
+            {
+                BeginRetargetEntry(selectedEntry, evt);
+                return true;
+            }
+
+            if (selectedLink != null && selectedLinkSource != null && LinkTargets(selectedLink, targetNode.definition))
+            {
+                BeginRetargetLink(selectedLinkSource, selectedLink, evt);
+                return true;
+            }
+
+            CombatActionEntry entry = FindEntryTargeting(targetNode.definition);
+            if (entry != null)
+            {
+                BeginRetargetEntry(entry, evt);
+                return true;
+            }
+
+            CombatAnimationDefinition source;
+            CombatActionLink link = FindLinkTargeting(targetNode.definition, out source);
+            if (link != null && source != null)
+            {
+                BeginRetargetLink(source, link, evt);
+                return true;
+            }
+
+            return false;
         }
 
         private void HandleGraphEvents(Event evt)
@@ -5247,19 +5340,9 @@ namespace ActToolkit.EditorTools
             dragMousePosition = evt.mousePosition;
             if (evt.type == EventType.MouseDown && evt.button == 0)
             {
-                if (database != null && IsInOutputHotZone(entryNodeRect, evt.mousePosition))
+                if (TryHandlePortMouseDown(evt))
                 {
-                    BeginDragLink(true, null, evt);
                     return;
-                }
-
-                foreach (GraphNode node in nodes)
-                {
-                    if (IsInOutputHotZone(node.rect, evt.mousePosition))
-                    {
-                        BeginDragLink(false, node.definition, evt);
-                        return;
-                    }
                 }
 
                 foreach (GraphNode node in nodes)
@@ -5306,6 +5389,41 @@ namespace ActToolkit.EditorTools
             draggingLink = true;
             draggingFromEntry = fromEntry;
             dragSourceDefinition = source;
+            dragExistingEntry = null;
+            dragExistingLink = null;
+            dragInputAction = selectedInputAction;
+            dragMousePosition = evt.mousePosition;
+            evt.Use();
+        }
+
+        private void BeginRetargetEntry(CombatActionEntry entry, Event evt)
+        {
+            selectedDefinition = null;
+            selectedLink = null;
+            selectedLinkSource = null;
+            selectedEntry = entry;
+            draggingLink = true;
+            draggingFromEntry = true;
+            dragSourceDefinition = null;
+            dragExistingEntry = entry;
+            dragExistingLink = null;
+            dragInputAction = entry == null ? selectedInputAction : entry.inputAction;
+            dragMousePosition = evt.mousePosition;
+            evt.Use();
+        }
+
+        private void BeginRetargetLink(CombatAnimationDefinition source, CombatActionLink link, Event evt)
+        {
+            selectedDefinition = null;
+            selectedEntry = null;
+            selectedLinkSource = source;
+            selectedLink = link;
+            draggingLink = true;
+            draggingFromEntry = false;
+            dragSourceDefinition = source;
+            dragExistingEntry = null;
+            dragExistingLink = link;
+            dragInputAction = link == null ? selectedInputAction : link.inputAction;
             dragMousePosition = evt.mousePosition;
             evt.Use();
         }
@@ -5324,7 +5442,15 @@ namespace ActToolkit.EditorTools
 
             if (target != null)
             {
-                if (draggingFromEntry)
+                if (dragExistingEntry != null)
+                {
+                    RetargetEntry(dragExistingEntry, target.definition);
+                }
+                else if (dragExistingLink != null && dragSourceDefinition != null && dragSourceDefinition != target.definition)
+                {
+                    RetargetActionLink(dragSourceDefinition, dragExistingLink, target.definition);
+                }
+                else if (draggingFromEntry)
                 {
                     CreateOrUpdateEntry(target.definition);
                 }
@@ -5337,6 +5463,9 @@ namespace ActToolkit.EditorTools
             draggingLink = false;
             draggingFromEntry = false;
             dragSourceDefinition = null;
+            dragExistingEntry = null;
+            dragExistingLink = null;
+            dragInputAction = selectedInputAction;
             RequestRepaint();
         }
 
@@ -5441,12 +5570,113 @@ namespace ActToolkit.EditorTools
             SelectLink(source, link);
         }
 
+        private void RetargetEntry(CombatActionEntry entry, CombatAnimationDefinition target)
+        {
+            if (database == null || entry == null || target == null)
+            {
+                return;
+            }
+
+            entry.targetDefinition = target;
+            entry.targetActionId = target.actionId;
+            EditorUtility.SetDirty(database);
+
+            selectedEntry = entry;
+            selectedLink = null;
+            selectedLinkSource = null;
+            selectedDefinition = null;
+            RefreshGraphLookupsOnly();
+        }
+
+        private void RetargetActionLink(CombatAnimationDefinition source, CombatActionLink link, CombatAnimationDefinition target)
+        {
+            if (source == null || link == null || target == null)
+            {
+                return;
+            }
+
+            link.targetDefinition = target;
+            link.targetActionId = target.actionId;
+            EditorUtility.SetDirty(source);
+            SelectLink(source, link);
+            RefreshGraphLookupsOnly();
+        }
+
         private void SelectLink(CombatAnimationDefinition source, CombatActionLink link)
         {
             selectedDefinition = null;
             selectedEntry = null;
             selectedLinkSource = source;
             selectedLink = link;
+        }
+
+        private CombatActionEntry FindEntryTargeting(CombatAnimationDefinition target)
+        {
+            if (database == null || target == null || database.entryActions == null)
+            {
+                return null;
+            }
+
+            foreach (CombatActionEntry entry in database.entryActions)
+            {
+                if (EntryTargets(entry, target))
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        }
+
+        private CombatActionLink FindLinkTargeting(CombatAnimationDefinition target, out CombatAnimationDefinition source)
+        {
+            source = null;
+            if (target == null)
+            {
+                return null;
+            }
+
+            foreach (GraphNode node in nodes)
+            {
+                CombatAnimationDefinition candidateSource = node.definition;
+                if (candidateSource == null || candidateSource.actionLinks == null)
+                {
+                    continue;
+                }
+
+                foreach (CombatActionLink link in candidateSource.actionLinks)
+                {
+                    if (LinkTargets(link, target))
+                    {
+                        source = candidateSource;
+                        return link;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool EntryTargets(CombatActionEntry entry, CombatAnimationDefinition target)
+        {
+            if (entry == null || target == null)
+            {
+                return false;
+            }
+
+            return entry.targetDefinition == target
+                || (!string.IsNullOrWhiteSpace(target.actionId) && string.Equals(entry.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool LinkTargets(CombatActionLink link, CombatAnimationDefinition target)
+        {
+            if (link == null || target == null)
+            {
+                return false;
+            }
+
+            return link.targetDefinition == target
+                || (!string.IsNullOrWhiteSpace(target.actionId) && string.Equals(link.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase));
         }
 
         private void RefreshGraph()
@@ -5534,8 +5764,8 @@ namespace ActToolkit.EditorTools
         private static Rect LoadNodeRect(CombatAnimationDefinition definition, int index)
         {
             string key = NodePrefsKey(definition);
-            float x = EditorPrefs.GetFloat(key + ".x", 240f + index % 4 * 240f);
-            float y = EditorPrefs.GetFloat(key + ".y", 70f + index / 4 * 150f);
+            float x = EditorPrefs.GetFloat(key + ".x", 340f + index % 4 * 330f);
+            float y = EditorPrefs.GetFloat(key + ".y", 80f + index / 4 * 210f);
             return new Rect(x, y, NodeWidth, NodeHeight);
         }
 
@@ -5562,12 +5792,12 @@ namespace ActToolkit.EditorTools
 
         private static Rect GetInputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.x - PortWidth, nodeRect.y + nodeRect.height * 0.5f - PortHeight * 0.5f, PortWidth, PortHeight);
+            return new Rect(nodeRect.x - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
         }
 
         private static Rect GetOutputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.xMax, nodeRect.y + nodeRect.height * 0.5f - PortHeight * 0.5f, PortWidth, PortHeight);
+            return new Rect(nodeRect.xMax - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
         }
 
         private Rect GetEntryOutputPort()
@@ -5584,8 +5814,7 @@ namespace ActToolkit.EditorTools
         private static bool IsInOutputHotZone(Rect nodeRect, Vector2 point)
         {
             Rect port = GetOutputPort(nodeRect);
-            Rect rightEdge = new Rect(nodeRect.xMax - 18f, nodeRect.y + 24f, 18f + PortWidth + 10f, nodeRect.height - 32f);
-            return ExpandRect(port, 8f).Contains(point) || rightEdge.Contains(point);
+            return ExpandRect(port, 8f).Contains(point);
         }
 
         private static Rect ExpandRect(Rect rect, float amount)
@@ -5616,7 +5845,7 @@ namespace ActToolkit.EditorTools
 
         private static void DrawConnectionNode(Vector2 center, string inputAction, string detail, bool selected, Action onClick)
         {
-            Rect rect = new Rect(center.x - 82f, center.y - 18f, 164f, 36f);
+            Rect rect = new Rect(center.x - 96f, center.y - 21f, 192f, 42f);
             Color previousBackground = GUI.backgroundColor;
             GUI.backgroundColor = selected ? new Color(1f, 0.85f, 0.28f, 1f) : new Color(0.30f, 0.32f, 0.34f, 1f);
             if (GUI.Button(rect, GUIContent.none, EditorStyles.helpBox))
@@ -5626,7 +5855,7 @@ namespace ActToolkit.EditorTools
 
             GUI.backgroundColor = previousBackground;
 
-            GUILayout.BeginArea(rect);
+            GUILayout.BeginArea(new Rect(rect.x + 6f, rect.y + 9f, rect.width - 12f, rect.height - 10f));
             GUILayout.BeginHorizontal();
             DrawInputSequencePill(inputAction, detail, selected);
             GUILayout.EndHorizontal();
@@ -5635,8 +5864,22 @@ namespace ActToolkit.EditorTools
 
         private static void DrawInputSequencePill(string inputAction, string detail, bool selected)
         {
-            CombatInputActionNames.TryDescribeSequence(inputAction, out string stickToken, out string buttonToken, out string actionToken);
+            bool described = CombatInputActionNames.TryDescribeSequence(inputAction, out string stickToken, out string buttonToken, out string actionToken);
             Color previousBackground = GUI.backgroundColor;
+
+            if (!described)
+            {
+                GUI.backgroundColor = new Color(0.40f, 0.42f, 0.46f, 1f);
+                GUILayout.Box(ShortLabel(inputAction), EditorStyles.miniButton, GUILayout.Width(112f), GUILayout.Height(22f));
+                GUI.backgroundColor = previousBackground;
+
+                if (!string.IsNullOrWhiteSpace(detail))
+                {
+                    GUILayout.Label(detail, selected ? EditorStyles.whiteMiniLabel : EditorStyles.miniBoldLabel, GUILayout.Width(56f), GUILayout.Height(22f));
+                }
+
+                return;
+            }
 
             if (!string.IsNullOrWhiteSpace(stickToken))
             {
@@ -5671,22 +5914,19 @@ namespace ActToolkit.EditorTools
             }
         }
 
-        private static void DrawPort(Rect rect, Color color, string label)
+        private static void DrawPort(Rect rect, Color color)
         {
-            EditorGUI.DrawRect(rect, color);
-            Color previousColor = GUI.color;
-            GUI.color = Color.white;
-            GUI.Label(rect, label, CenteredMiniBoldLabel());
-            GUI.color = previousColor;
-        }
-
-        private static GUIStyle CenteredMiniBoldLabel()
-        {
-            GUIStyle style = new GUIStyle(EditorStyles.miniBoldLabel)
-            {
-                alignment = TextAnchor.MiddleCenter
-            };
-            return style;
+            Handles.BeginGUI();
+            Color previousColor = Handles.color;
+            Vector2 center = rect.center;
+            Handles.color = Color.black;
+            Handles.DrawSolidDisc(center, Vector3.forward, rect.width * 0.5f + 2f);
+            Handles.color = color;
+            Handles.DrawSolidDisc(center, Vector3.forward, rect.width * 0.5f);
+            Handles.color = Color.white;
+            Handles.DrawWireDisc(center, Vector3.forward, rect.width * 0.5f);
+            Handles.color = previousColor;
+            Handles.EndGUI();
         }
 
         private static void DrawGrid(Rect rect, float spacing, Color color)
@@ -5730,13 +5970,15 @@ namespace ActToolkit.EditorTools
             string normalized = CombatInputActionNames.Normalize(inputAction);
             int selectedIndex = Array.IndexOf(CombatInputActionNames.AuthoringNames, normalized);
             string[] labels = BuildInputActionPopupLabels(inputAction, selectedIndex);
-            int nextIndex = EditorGUILayout.Popup(label, selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels);
+            int nextIndex = EditorGUILayout.Popup(label + " Preset", selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels);
+            string nextValue = string.IsNullOrWhiteSpace(inputAction) ? normalized : inputAction.Trim();
             if (nextIndex >= 0 && nextIndex < CombatInputActionNames.AuthoringNames.Length)
             {
-                return CombatInputActionNames.AuthoringNames[nextIndex];
+                nextValue = CombatInputActionNames.AuthoringNames[nextIndex];
             }
 
-            return EditorGUILayout.TextField("Custom Input", string.IsNullOrWhiteSpace(inputAction) ? normalized : inputAction);
+            nextValue = EditorGUILayout.TextField(label + " Sequence", nextValue);
+            return CombatInputActionNames.Normalize(nextValue);
         }
 
         private static string DrawInputActionToolbarPopup(string inputAction, params GUILayoutOption[] options)
