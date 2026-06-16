@@ -94,6 +94,7 @@ namespace ActToolkit.EditorTools
         private double nextEditorRepaintTime;
         private bool previewSceneRefreshScheduled;
         private bool scheduledPreviewSceneCreateNew;
+        private bool keepSelectedActionOnScheduledPreviewRefresh;
 
         [MenuItem("Tools/Act Toolkit/Character Action Editor")]
         [MenuItem("Tools/Act Toolkit/Combat Animation Editor")]
@@ -113,7 +114,7 @@ namespace ActToolkit.EditorTools
                 EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ComboTable),
                 (int)EditorPage.CharacterSetup,
                 (int)EditorPage.DefinitionEditor);
-            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring);
+            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectActionForPreview);
             characterActionGraphView.Initialize();
             LoadCharacterProfileFromPrefs();
             if (characterProfile == null)
@@ -782,7 +783,7 @@ namespace ActToolkit.EditorTools
 
             if (characterActionGraphView == null)
             {
-                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring);
+                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectActionForPreview);
                 characterActionGraphView.Initialize();
             }
 
@@ -1340,14 +1341,40 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
+            SelectActionForPreview(action);
+            currentPage = EditorPage.DefinitionEditor;
+            EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
+            mainScroll = Vector2.zero;
+        }
+
+        private void SelectActionForPreview(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
             definition = action;
             clip = action.clip;
             selectedMarkerIndex = -1;
             normalizedTime = 0f;
-            mainScroll = Vector2.zero;
-            currentPage = EditorPage.DefinitionEditor;
-            EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
-            SampleClip();
+            int animationIndex = FindAnimationCandidateIndex(clip);
+            if (animationIndex >= 0)
+            {
+                selectedAnimationIndex = animationIndex;
+            }
+
+            EnsureSelectedPreviewModelInstance();
+            if (previewRoot == null)
+            {
+                keepSelectedActionOnScheduledPreviewRefresh = true;
+                SchedulePreviewSceneRefresh(true);
+            }
+            else
+            {
+                SampleClip();
+            }
+
             Repaint();
         }
 
@@ -2705,8 +2732,10 @@ namespace ActToolkit.EditorTools
             EditorApplication.delayCall -= RunScheduledPreviewSceneRefresh;
 
             bool createNewScene = scheduledPreviewSceneCreateNew;
+            bool keepSelectedAction = keepSelectedActionOnScheduledPreviewRefresh;
             previewSceneRefreshScheduled = false;
             scheduledPreviewSceneCreateNew = false;
+            keepSelectedActionOnScheduledPreviewRefresh = false;
 
             if (this == null)
             {
@@ -2720,7 +2749,15 @@ namespace ActToolkit.EditorTools
             }
 
             SpawnSelectedPreviewModel(false);
-            UseFirstCompatibleAnimationIfNeeded();
+            if (!keepSelectedAction)
+            {
+                UseFirstCompatibleAnimationIfNeeded();
+            }
+            else
+            {
+                SampleClip();
+            }
+
             Repaint();
         }
 
@@ -2885,6 +2922,7 @@ namespace ActToolkit.EditorTools
                         continue;
                     }
 
+                    ClearSelectionIfInside(root);
                     DestroyImmediate(root);
                 }
 
@@ -2903,8 +2941,48 @@ namespace ActToolkit.EditorTools
                     continue;
                 }
 
+                ClearSelectionIfInside(sceneObject);
                 DestroyImmediate(sceneObject);
             }
+        }
+
+        private static void ClearSelectionIfInside(GameObject root)
+        {
+            if (root == null || Selection.objects == null || Selection.objects.Length == 0)
+            {
+                return;
+            }
+
+            foreach (UnityEngine.Object selected in Selection.objects)
+            {
+                if (selected == null || !SelectionObjectIsInside(selected, root))
+                {
+                    continue;
+                }
+
+                Selection.objects = Array.Empty<UnityEngine.Object>();
+                return;
+            }
+        }
+
+        private static bool SelectionObjectIsInside(UnityEngine.Object selected, GameObject root)
+        {
+            if (root == null || selected == null)
+            {
+                return false;
+            }
+
+            Transform selectedTransform = null;
+            if (selected is GameObject selectedGameObject)
+            {
+                selectedTransform = selectedGameObject.transform;
+            }
+            else if (selected is Component selectedComponent)
+            {
+                selectedTransform = selectedComponent.transform;
+            }
+
+            return selectedTransform != null && selectedTransform.IsChildOf(root.transform);
         }
 
         private static void ApplyPreviewHideFlags(GameObject root)
@@ -4780,9 +4858,13 @@ namespace ActToolkit.EditorTools
         private const string DefaultDatabasePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CombatActionDatabase.asset";
         private const float CanvasWidth = 2200f;
         private const float CanvasHeight = 1400f;
-        private const float NodeWidth = 260f;
-        private const float NodeHeight = 156f;
-        private const float PortSize = 14f;
+        private const float NodeWidth = 190f;
+        private const float NodeHeight = 98f;
+        private const float NodeContentX = 16f;
+        private const float NodeContentWidth = NodeWidth - NodeContentX * 2f;
+        private const float ConnectorWidth = 10f;
+        private const float ConnectorHeight = 40f;
+        private const float ConnectorInset = 2f;
         private static readonly Color InputPortColor = new Color(0.36f, 0.62f, 0.88f, 1f);
         private static readonly Color OutputPortColor = new Color(0.72f, 0.74f, 0.76f, 1f);
         private static readonly Color EntryPortColor = new Color(0.86f, 0.72f, 0.32f, 1f);
@@ -4792,7 +4874,7 @@ namespace ActToolkit.EditorTools
         private readonly Dictionary<string, GraphNode> idLookup = new Dictionary<string, GraphNode>(StringComparer.OrdinalIgnoreCase);
         private Vector2 graphScroll;
         private Vector2 inspectorScroll;
-        private Rect entryNodeRect = new Rect(24f, 120f, 220f, 118f);
+        private Rect entryNodeRect = new Rect(24f, 80f, NodeWidth, NodeHeight);
         private CombatActionDatabase database;
         private string selectedInputAction = CombatInputActionNames.LightAttack;
         private int defaultStartFrame = 12;
@@ -4808,13 +4890,18 @@ namespace ActToolkit.EditorTools
         private CombatAnimationDefinition selectedLinkSource;
         private CombatActionLink selectedLink;
         private CombatActionEntry selectedEntry;
+        private GraphNode draggedNode;
+        private bool draggingEntryNode;
+        private Vector2 nodeDragOffset;
         private readonly Action repaint;
         private readonly Action<CombatAnimationDefinition> openAction;
+        private readonly Action<CombatAnimationDefinition> selectAction;
 
-        public CombatComboGraphView(Action repaint, Action<CombatAnimationDefinition> openAction = null)
+        public CombatComboGraphView(Action repaint, Action<CombatAnimationDefinition> openAction = null, Action<CombatAnimationDefinition> selectAction = null)
         {
             this.repaint = repaint;
             this.openAction = openAction;
+            this.selectAction = selectAction;
         }
 
         public CombatActionDatabase Database => database;
@@ -4890,8 +4977,7 @@ namespace ActToolkit.EditorTools
 
             GUILayout.Space(10f);
             GUILayout.Label("New Link Input", GUILayout.Width(92f));
-            selectedInputAction = DrawInputActionToolbarPopup(selectedInputAction, GUILayout.Width(150f));
-            selectedInputAction = EditorGUILayout.TextField(selectedInputAction, EditorStyles.toolbarTextField, GUILayout.Width(180f));
+            selectedInputAction = DrawInputActionComposer(selectedInputAction, true);
             DrawInputSequencePill(selectedInputAction, string.Empty, false);
             GUILayout.Label("Window", GUILayout.Width(48f));
             defaultStartFrame = Mathf.Max(0, EditorGUILayout.IntField(defaultStartFrame, GUILayout.Width(42f)));
@@ -4936,18 +5022,13 @@ namespace ActToolkit.EditorTools
 
                     if (database != null)
                     {
-                        entryNodeRect = GUI.Window(1, entryNodeRect, DrawEntryNodeWindow, "Entry");
+                        DrawEntryNode();
                     }
 
                     for (int i = 0; i < nodes.Count; i++)
                     {
                         GraphNode node = nodes[i];
-                        Rect before = node.rect;
-                        node.rect = GUI.Window(100 + i, node.rect, id => DrawActionNodeWindow(node), NodeTitle(node.definition));
-                        if (node.rect.position != before.position)
-                        {
-                            SaveNodePosition(node);
-                        }
+                        DrawActionNode(node);
                     }
 
                     DrawPorts();
@@ -5130,30 +5211,28 @@ namespace ActToolkit.EditorTools
             }
         }
 
-        private void DrawEntryNodeWindow(int id)
+        private void DrawEntryNode()
         {
+            DrawNodeFrame(entryNodeRect, EntryPortColor, selectedEntry != null);
+            HandleEntryNodeSelection(Event.current);
+
             if (database == null)
             {
-                GUILayout.Label("No database", EditorStyles.miniLabel);
+                GUI.Label(NodeLocalRect(entryNodeRect, 30f, 18f), "No database", EditorStyles.miniLabel);
             }
             else
             {
                 database.EnsureEntryActions();
-                GUILayout.Label("Initial Node", EditorStyles.boldLabel);
-                GUILayout.Label("Source: no active definition", EditorStyles.miniLabel);
-                GUILayout.Label("Starter Links: " + database.entryActions.Count, EditorStyles.miniLabel);
-                GUILayout.Label("Combo Table: " + ShortLabel(database.name), EditorStyles.miniLabel);
-                GUILayout.Space(4f);
-                if (GUILayout.Button("Select Combo Table", GUILayout.Height(22f)))
+                GUI.Label(NodeLocalRect(entryNodeRect, 20f, 20f), "Entry", EditorStyles.boldLabel);
+                GUI.Label(NodeLocalRect(entryNodeRect, 43f, 16f), ShortLabel(database.name), EditorStyles.miniLabel);
+                if (GUI.Button(NodeLocalRect(entryNodeRect, 68f, 22f), "Select Table"))
                 {
                     Selection.activeObject = database;
                 }
             }
-
-            GUI.DragWindow(new Rect(0f, 0f, 10000f, 22f));
         }
 
-        private void DrawActionNodeWindow(GraphNode node)
+        private void DrawActionNode(GraphNode node)
         {
             CombatAnimationDefinition action = node.definition;
             if (action == null)
@@ -5161,24 +5240,24 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
-            action.EnsureActionLinks();
-            int frameCount = action.clip == null
-                ? 0
-                : Mathf.Max(1, Mathf.RoundToInt(action.clip.length * Mathf.Max(1, action.authoringFrameRate)));
-            int markerCount = action.markers == null ? 0 : action.markers.Count;
+            DrawNodeFrame(node.rect, InputPortColor, selectedDefinition == action);
+            HandleActionNodeSelection(node, Event.current);
 
-            GUILayout.Label(ShortLabel(action.actionId), EditorStyles.boldLabel);
-            GUILayout.Label("Definition: " + ShortLabel(action.name), EditorStyles.miniLabel);
-            GUILayout.Label("State: " + ShortLabel(string.IsNullOrWhiteSpace(action.stateName) ? "None" : action.stateName), EditorStyles.miniLabel);
-            GUILayout.Label("Clip: " + (action.clip == null ? "None" : ShortLabel(action.clip.name)), EditorStyles.miniLabel);
-            GUILayout.Label("Frames: " + frameCount + " @ " + Mathf.Max(1, action.authoringFrameRate) + " fps", EditorStyles.miniLabel);
-            GUILayout.Label("Markers: " + markerCount + "  Links: " + action.actionLinks.Count, EditorStyles.miniLabel);
-            if (GUILayout.Button("Edit Definition", GUILayout.Height(22f)))
+            action.EnsureActionLinks();
+            EditorGUI.BeginChangeCheck();
+            string nextName = GUI.TextField(NodeLocalRect(node.rect, 20f, 22f), NodeDisplayName(action));
+            if (EditorGUI.EndChangeCheck())
+            {
+                action.stateName = nextName;
+                EditorUtility.SetDirty(action);
+            }
+
+            GUI.Label(NodeLocalRect(node.rect, 45f, 16f), ShortLabel(action.name), EditorStyles.miniLabel);
+
+            if (GUI.Button(NodeLocalRect(node.rect, 68f, 22f), "Edit Definition"))
             {
                 OpenAction(action);
             }
-
-            GUI.DragWindow(new Rect(0f, 0f, 10000f, 22f));
         }
 
         private void DrawConnections()
@@ -5199,8 +5278,10 @@ namespace ActToolkit.EditorTools
                         continue;
                     }
 
-                    DrawConnection(GetEntryOutputPort().center, GetInputPort(targetNode.rect).center, InputColor(entry.inputAction), selectedEntry == entry);
-                    DrawConnectionNode(GetConnectionMidpoint(GetEntryOutputPort().center, GetInputPort(targetNode.rect).center), entry.inputAction, "start", selectedEntry == entry, () =>
+                    Vector2 start = GetEntryOutputPort().center;
+                    Vector2 end = GetInputPort(targetNode.rect).center;
+                    DrawConnection(start, end, InputColor(entry.inputAction), selectedEntry == entry);
+                    DrawConnectionNode(start, end, entryNodeRect, targetNode.rect, entry.inputAction, "start", selectedEntry == entry, () =>
                     {
                         selectedEntry = entry;
                         selectedLink = null;
@@ -5235,7 +5316,7 @@ namespace ActToolkit.EditorTools
                     Vector2 start = GetOutputPort(sourceNode.rect).center;
                     Vector2 end = GetInputPort(targetNode.rect).center;
                     DrawConnection(start, end, InputColor(link.inputAction), selectedLink == link);
-                    DrawConnectionNode(GetConnectionMidpoint(start, end), link.inputAction, link.startFrame + "-" + link.endFrame + "f", selectedLink == link, () => SelectLink(source, link));
+                    DrawConnectionNode(start, end, sourceNode.rect, targetNode.rect, link.inputAction, link.startFrame + "-" + link.endFrame + "f", selectedLink == link, () => SelectLink(source, link));
                 }
             }
         }
@@ -5349,13 +5430,14 @@ namespace ActToolkit.EditorTools
                 {
                     if (node.rect.Contains(evt.mousePosition))
                     {
-                        selectedDefinition = node.definition;
-                        selectedLink = null;
-                        selectedLinkSource = null;
-                        selectedEntry = null;
+                        SelectDefinitionNode(node.definition);
                         if (evt.clickCount > 1)
                         {
                             OpenAction(node.definition);
+                        }
+                        else
+                        {
+                            BeginNodeDrag(node, evt.mousePosition);
                         }
 
                         RequestRepaint();
@@ -5370,8 +5452,22 @@ namespace ActToolkit.EditorTools
                     selectedLinkSource = null;
                     selectedEntry = null;
                     Selection.activeObject = database;
+                    BeginEntryNodeDrag(evt.mousePosition);
                     RequestRepaint();
                 }
+            }
+            else if (evt.type == EventType.MouseDrag && draggedNode != null)
+            {
+                draggedNode.rect.position = evt.mousePosition - nodeDragOffset;
+                SaveNodePosition(draggedNode);
+                RequestRepaint();
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseDrag && draggingEntryNode)
+            {
+                entryNodeRect.position = evt.mousePosition - nodeDragOffset;
+                RequestRepaint();
+                evt.Use();
             }
             else if (evt.type == EventType.MouseDrag && draggingLink)
             {
@@ -5382,6 +5478,67 @@ namespace ActToolkit.EditorTools
                 CompleteDragLink(evt.mousePosition);
                 evt.Use();
             }
+            else if (evt.type == EventType.MouseUp && (draggedNode != null || draggingEntryNode))
+            {
+                draggedNode = null;
+                draggingEntryNode = false;
+                evt.Use();
+            }
+        }
+
+        private void HandleEntryNodeSelection(Event evt)
+        {
+            if (evt.type != EventType.MouseDown || evt.button != 0 || !entryNodeRect.Contains(evt.mousePosition))
+            {
+                return;
+            }
+
+            selectedDefinition = null;
+            selectedLink = null;
+            selectedLinkSource = null;
+            selectedEntry = null;
+        }
+
+        private void HandleActionNodeSelection(GraphNode node, Event evt)
+        {
+            if (node == null || node.definition == null || evt.type != EventType.MouseDown || evt.button != 0 || !node.rect.Contains(evt.mousePosition))
+            {
+                return;
+            }
+
+            SelectDefinitionNode(node.definition);
+        }
+
+        private void SelectDefinitionNode(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            bool changed = selectedDefinition != action;
+            selectedDefinition = action;
+            selectedLink = null;
+            selectedLinkSource = null;
+            selectedEntry = null;
+            if (changed)
+            {
+                selectAction?.Invoke(action);
+            }
+        }
+
+        private void BeginNodeDrag(GraphNode node, Vector2 mousePosition)
+        {
+            draggedNode = node;
+            draggingEntryNode = false;
+            nodeDragOffset = mousePosition - node.rect.position;
+        }
+
+        private void BeginEntryNodeDrag(Vector2 mousePosition)
+        {
+            draggedNode = null;
+            draggingEntryNode = true;
+            nodeDragOffset = mousePosition - entryNodeRect.position;
         }
 
         private void BeginDragLink(bool fromEntry, CombatAnimationDefinition source, Event evt)
@@ -5764,8 +5921,8 @@ namespace ActToolkit.EditorTools
         private static Rect LoadNodeRect(CombatAnimationDefinition definition, int index)
         {
             string key = NodePrefsKey(definition);
-            float x = EditorPrefs.GetFloat(key + ".x", 340f + index % 4 * 330f);
-            float y = EditorPrefs.GetFloat(key + ".y", 80f + index / 4 * 210f);
+            float x = EditorPrefs.GetFloat(key + ".x", 300f + index % 5 * 250f);
+            float y = EditorPrefs.GetFloat(key + ".y", 80f + index / 5 * 140f);
             return new Rect(x, y, NodeWidth, NodeHeight);
         }
 
@@ -5792,12 +5949,20 @@ namespace ActToolkit.EditorTools
 
         private static Rect GetInputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.x - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
+            return new Rect(
+                nodeRect.x + ConnectorInset,
+                nodeRect.y + nodeRect.height * 0.5f - ConnectorHeight * 0.5f,
+                ConnectorWidth,
+                ConnectorHeight);
         }
 
         private static Rect GetOutputPort(Rect nodeRect)
         {
-            return new Rect(nodeRect.xMax - PortSize * 0.5f, nodeRect.y + nodeRect.height * 0.5f - PortSize * 0.5f, PortSize, PortSize);
+            return new Rect(
+                nodeRect.xMax - ConnectorWidth - ConnectorInset,
+                nodeRect.y + nodeRect.height * 0.5f - ConnectorHeight * 0.5f,
+                ConnectorWidth,
+                ConnectorHeight);
         }
 
         private Rect GetEntryOutputPort()
@@ -5822,11 +5987,6 @@ namespace ActToolkit.EditorTools
             return new Rect(rect.x - amount, rect.y - amount, rect.width + amount * 2f, rect.height + amount * 2f);
         }
 
-        private static Vector2 GetConnectionMidpoint(Vector2 start, Vector2 end)
-        {
-            return (start + end) * 0.5f;
-        }
-
         private static void DrawConnection(Vector2 start, Vector2 end, Color color, bool selected)
         {
             Color previousColor = Handles.color;
@@ -5843,58 +6003,117 @@ namespace ActToolkit.EditorTools
             Handles.color = previousColor;
         }
 
-        private static void DrawConnectionNode(Vector2 center, string inputAction, string detail, bool selected, Action onClick)
+        private static void DrawConnectionNode(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, string inputAction, string detail, bool selected, Action onClick)
         {
-            Rect rect = new Rect(center.x - 96f, center.y - 21f, 192f, 42f);
-            Color previousBackground = GUI.backgroundColor;
-            GUI.backgroundColor = selected ? new Color(1f, 0.85f, 0.28f, 1f) : new Color(0.30f, 0.32f, 0.34f, 1f);
-            if (GUI.Button(rect, GUIContent.none, EditorStyles.helpBox))
+            Rect rect = GetConnectionLabelRect(start, end, sourceRect, targetRect, ConnectionLabelWidth(inputAction, detail));
+            EditorGUI.DrawRect(rect, selected ? new Color(0.28f, 0.24f, 0.12f, 0.98f) : new Color(0.18f, 0.19f, 0.20f, 0.94f));
+
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
             {
                 onClick?.Invoke();
             }
 
-            GUI.backgroundColor = previousBackground;
+            if (selected)
+            {
+                DrawRectOutline(rect, Color.yellow, 2f);
+            }
 
-            GUILayout.BeginArea(new Rect(rect.x + 6f, rect.y + 9f, rect.width - 12f, rect.height - 10f));
+            GUILayout.BeginArea(new Rect(rect.x + 4f, rect.y + 3f, rect.width - 8f, rect.height - 6f));
             GUILayout.BeginHorizontal();
             DrawInputSequencePill(inputAction, detail, selected);
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
 
-        private static void DrawInputSequencePill(string inputAction, string detail, bool selected)
+        private static Rect GetConnectionLabelRect(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, float width)
         {
-            bool described = CombatInputActionNames.TryDescribeSequence(inputAction, out string stickToken, out string buttonToken, out string actionToken);
-            Color previousBackground = GUI.backgroundColor;
+            const float height = 30f;
+            const float verticalOffset = 36f;
 
-            if (!described)
+            float gap = targetRect.xMin - sourceRect.xMax;
+            float x = start.x + (end.x - start.x) * 0.55f - width * 0.5f;
+            float y = Mathf.Min(start.y, end.y) - verticalOffset;
+
+            if (gap < width + 24f)
             {
-                GUI.backgroundColor = new Color(0.40f, 0.42f, 0.46f, 1f);
-                GUILayout.Box(ShortLabel(inputAction), EditorStyles.miniButton, GUILayout.Width(112f), GUILayout.Height(22f));
-                GUI.backgroundColor = previousBackground;
+                x = sourceRect.xMax + Mathf.Max(12f, gap * 0.5f - width * 0.5f);
+                y = Mathf.Min(sourceRect.yMin, targetRect.yMin) - height - 8f;
 
-                if (!string.IsNullOrWhiteSpace(detail))
+                if (x + width > targetRect.xMin - 8f)
                 {
-                    GUILayout.Label(detail, selected ? EditorStyles.whiteMiniLabel : EditorStyles.miniBoldLabel, GUILayout.Width(56f), GUILayout.Height(22f));
+                    x = targetRect.xMin - width - 8f;
                 }
 
-                return;
+                if (x < sourceRect.xMax + 8f)
+                {
+                    x = sourceRect.xMax + 8f;
+                    y = Mathf.Max(sourceRect.yMax, targetRect.yMax) + 8f;
+                }
             }
 
-            if (!string.IsNullOrWhiteSpace(stickToken))
+            return new Rect(Mathf.Max(8f, x), Mathf.Max(8f, y), width, height);
+        }
+
+        private static float ConnectionLabelWidth(string inputAction, string detail)
+        {
+            float width = 16f;
+            string[] tokens = CombatInputActionNames.GetInputActionTokens(inputAction);
+            for (int i = 0; i < tokens.Length; i++)
             {
-                GUI.backgroundColor = new Color(0.22f, 0.40f, 0.62f, 1f);
-                GUILayout.Box(stickToken, EditorStyles.miniButton, GUILayout.Width(48f), GUILayout.Height(22f));
-                GUI.backgroundColor = previousBackground;
-                GUILayout.Label("+", EditorStyles.miniBoldLabel, GUILayout.Width(10f));
+                width += InputTokenWidth(CombatInputActionNames.DisplayToken(tokens[i]));
+                if (i < tokens.Length - 1)
+                {
+                    width += 10f;
+                }
             }
 
-            GUI.backgroundColor = InputButtonColor(buttonToken);
-            GUILayout.Box(buttonToken, EditorStyles.miniButton, GUILayout.Width(32f), GUILayout.Height(22f));
-            GUI.backgroundColor = previousBackground;
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                width += 82f;
+            }
 
-            string label = string.IsNullOrWhiteSpace(detail) ? actionToken : detail;
-            GUILayout.Label(label, selected ? EditorStyles.whiteMiniLabel : EditorStyles.miniBoldLabel, GUILayout.Width(56f), GUILayout.Height(22f));
+            return Mathf.Clamp(width, 150f, 520f);
+        }
+
+        private static void DrawInputSequencePill(string inputAction, string detail, bool selected)
+        {
+            string[] tokens = CombatInputActionNames.GetInputActionTokens(inputAction);
+            Color previousBackground = GUI.backgroundColor;
+            if (tokens.Length == 0)
+            {
+                GUI.backgroundColor = new Color(0.40f, 0.42f, 0.46f, 1f);
+                GUILayout.Box("None", EditorStyles.miniButton, GUILayout.Width(48f), GUILayout.Height(22f));
+                GUI.backgroundColor = previousBackground;
+            }
+            else
+            {
+                for (int i = 0; i < tokens.Length; i++)
+                {
+                    string tokenLabel = CombatInputActionNames.DisplayToken(tokens[i]);
+                    GUI.backgroundColor = InputTokenColor(tokens[i]);
+                    GUILayout.Box(tokenLabel, EditorStyles.miniButton, GUILayout.Width(InputTokenWidth(tokenLabel)), GUILayout.Height(22f));
+                    GUI.backgroundColor = previousBackground;
+                    if (i < tokens.Length - 1)
+                    {
+                        GUILayout.Label("+", EditorStyles.miniBoldLabel, GUILayout.Width(10f));
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                GUILayout.Label(detail, selected ? EditorStyles.whiteMiniLabel : EditorStyles.miniBoldLabel, GUILayout.Width(72f), GUILayout.Height(22f));
+            }
+        }
+
+        private static float InputTokenWidth(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return 32f;
+            }
+
+            return Mathf.Clamp(token.Length * 8f + 18f, 36f, 96f);
         }
 
         private static Color InputButtonColor(string buttonToken)
@@ -5914,17 +6133,66 @@ namespace ActToolkit.EditorTools
             }
         }
 
+        private static Color InputTokenColor(string token)
+        {
+            string normalized = CombatInputActionNames.Normalize(token);
+            if (normalized.StartsWith("Stick.", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("DPad.", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Color(0.22f, 0.40f, 0.62f, 1f);
+            }
+
+            if (normalized.Contains("Attack.Heavy", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Color(0.95f, 0.48f, 0.26f, 1f);
+            }
+
+            if (normalized.Contains("Dodge", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Color(0.34f, 0.78f, 0.88f, 1f);
+            }
+
+            if (normalized.Contains("Jump", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Color(0.60f, 0.48f, 0.95f, 1f);
+            }
+
+            if (normalized.Contains("Guard", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("Button.", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Color(0.34f, 0.70f, 0.48f, 1f);
+            }
+
+            return new Color(0.42f, 0.42f, 0.42f, 1f);
+        }
+
         private static void DrawPort(Rect rect, Color color)
+        {
+            EditorGUI.DrawRect(rect, color);
+            DrawRectOutline(rect, Color.black, 1f);
+        }
+
+        private static Rect NodeLocalRect(Rect nodeRect, float y, float height)
+        {
+            return new Rect(nodeRect.x + NodeContentX, nodeRect.y + y, NodeContentWidth, height);
+        }
+
+        private static void DrawNodeFrame(Rect rect, Color color, bool selected)
+        {
+            EditorGUI.DrawRect(rect, new Color(0.20f, 0.21f, 0.22f, 0.96f));
+            DrawRectOutline(rect, selected ? Color.yellow : color, selected ? 3f : 2f);
+        }
+
+        private static void DrawRectOutline(Rect rect, Color color, float width)
         {
             Handles.BeginGUI();
             Color previousColor = Handles.color;
-            Vector2 center = rect.center;
-            Handles.color = Color.black;
-            Handles.DrawSolidDisc(center, Vector3.forward, rect.width * 0.5f + 2f);
             Handles.color = color;
-            Handles.DrawSolidDisc(center, Vector3.forward, rect.width * 0.5f);
-            Handles.color = Color.white;
-            Handles.DrawWireDisc(center, Vector3.forward, rect.width * 0.5f);
+            Vector3 topLeft = new Vector3(rect.xMin, rect.yMin);
+            Vector3 topRight = new Vector3(rect.xMax, rect.yMin);
+            Vector3 bottomRight = new Vector3(rect.xMax, rect.yMax);
+            Vector3 bottomLeft = new Vector3(rect.xMin, rect.yMax);
+            Handles.DrawAAPolyLine(width, topLeft, topRight, bottomRight, bottomLeft, topLeft);
             Handles.color = previousColor;
             Handles.EndGUI();
         }
@@ -5967,32 +6235,175 @@ namespace ActToolkit.EditorTools
 
         private static string DrawInputActionPopup(string label, string inputAction)
         {
-            string normalized = CombatInputActionNames.Normalize(inputAction);
-            int selectedIndex = Array.IndexOf(CombatInputActionNames.AuthoringNames, normalized);
-            string[] labels = BuildInputActionPopupLabels(inputAction, selectedIndex);
-            int nextIndex = EditorGUILayout.Popup(label + " Preset", selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels);
-            string nextValue = string.IsNullOrWhiteSpace(inputAction) ? normalized : inputAction.Trim();
-            if (nextIndex >= 0 && nextIndex < CombatInputActionNames.AuthoringNames.Length)
+            EditorGUILayout.LabelField(label, EditorStyles.miniBoldLabel);
+            string nextValue = DrawInputActionComposer(inputAction, false);
+            using (new EditorGUI.DisabledScope(true))
             {
-                nextValue = CombatInputActionNames.AuthoringNames[nextIndex];
+                EditorGUILayout.TextField("Sequence", nextValue);
             }
 
-            nextValue = EditorGUILayout.TextField(label + " Sequence", nextValue);
-            return CombatInputActionNames.Normalize(nextValue);
+            return nextValue;
         }
 
         private static string DrawInputActionToolbarPopup(string inputAction, params GUILayoutOption[] options)
         {
-            string normalized = CombatInputActionNames.Normalize(inputAction);
-            int selectedIndex = Array.IndexOf(CombatInputActionNames.AuthoringNames, normalized);
-            string[] labels = BuildInputActionPopupLabels(inputAction, selectedIndex);
-            int nextIndex = EditorGUILayout.Popup(selectedIndex >= 0 ? selectedIndex : labels.Length - 1, labels, EditorStyles.toolbarPopup, options);
-            if (nextIndex >= 0 && nextIndex < CombatInputActionNames.AuthoringNames.Length)
+            return DrawInputActionComposer(inputAction, true, options);
+        }
+
+        private static readonly string[] InputTokenPresetLabels =
+        {
+            "Square", "Triangle", "Circle", "Cross",
+            "L1", "R1", "L2", "R2", "L3", "R3",
+            "LS Up", "LS Down", "LS Left", "LS Right",
+            "DPad Up", "DPad Down", "DPad Left", "DPad Right",
+            "Custom"
+        };
+
+        private static readonly string[] InputTokenPresetValues =
+        {
+            CombatInputActionNames.LightAttack,
+            CombatInputActionNames.HeavyAttack,
+            CombatInputActionNames.Dodge,
+            CombatInputActionNames.Jump,
+            CombatInputActionNames.Guard,
+            CombatInputActionNames.ButtonR1,
+            CombatInputActionNames.ButtonL2,
+            CombatInputActionNames.ButtonR2,
+            CombatInputActionNames.ButtonL3,
+            CombatInputActionNames.ButtonR3,
+            "Stick.Up",
+            "Stick.Down",
+            "Stick.Left",
+            "Stick.Right",
+            CombatInputActionNames.DPadUp,
+            CombatInputActionNames.DPadDown,
+            CombatInputActionNames.DPadLeft,
+            CombatInputActionNames.DPadRight,
+            string.Empty
+        };
+
+        private static string DrawInputActionComposer(string inputAction, bool toolbar, params GUILayoutOption[] options)
+        {
+            GUIStyle popupStyle = toolbar ? EditorStyles.toolbarPopup : EditorStyles.popup;
+            GUIStyle textStyle = toolbar ? EditorStyles.toolbarTextField : EditorStyles.textField;
+            List<string> tokens = new List<string>(CombatInputActionNames.GetInputActionTokens(inputAction));
+            if (tokens.Count == 0)
             {
-                return CombatInputActionNames.AuthoringNames[nextIndex];
+                tokens.Add(CombatInputActionNames.LightAttack);
             }
 
-            return inputAction;
+            int removeIndex = -1;
+            if (toolbar)
+            {
+                EditorGUILayout.BeginHorizontal(options);
+                for (int i = 0; i < tokens.Count; i++)
+                {
+                    DrawInputTokenRow(tokens, i, popupStyle, textStyle, true, ref removeIndex);
+                    GUILayout.Space(2f);
+                }
+
+                if (GUILayout.Button("+", EditorStyles.toolbarButton, GUILayout.Width(24f)))
+                {
+                    tokens.Add(NextNewInputToken(tokens));
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+            else
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox, options);
+                for (int i = 0; i < tokens.Count; i++)
+                {
+                    DrawInputTokenRow(tokens, i, popupStyle, textStyle, false, ref removeIndex);
+                }
+
+                if (GUILayout.Button("+ Add Token", GUILayout.Height(24f)))
+                {
+                    tokens.Add(NextNewInputToken(tokens));
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+
+            if (removeIndex >= 0 && tokens.Count > 1)
+            {
+                tokens.RemoveAt(removeIndex);
+            }
+
+            return CombatInputActionNames.ComposeInputAction(tokens);
+        }
+
+        private static void DrawInputTokenRow(List<string> tokens, int index, GUIStyle popupStyle, GUIStyle textStyle, bool toolbar, ref int removeIndex)
+        {
+            if (!toolbar)
+            {
+                EditorGUILayout.BeginHorizontal();
+            }
+
+            int presetIndex = InputTokenPresetIndex(tokens[index]);
+            int nextPresetIndex = EditorGUILayout.Popup(presetIndex, InputTokenPresetLabels, popupStyle, GUILayout.Width(toolbar ? 78f : 104f));
+            if (nextPresetIndex >= 0
+                && nextPresetIndex < InputTokenPresetValues.Length
+                && !string.IsNullOrWhiteSpace(InputTokenPresetValues[nextPresetIndex]))
+            {
+                tokens[index] = InputTokenPresetValues[nextPresetIndex];
+            }
+
+            tokens[index] = EditorGUILayout.TextField(tokens[index], textStyle, GUILayout.Width(toolbar ? 108f : 150f));
+            if (GUILayout.Button("-", toolbar ? EditorStyles.toolbarButton : EditorStyles.miniButton, GUILayout.Width(22f)))
+            {
+                removeIndex = index;
+            }
+
+            if (!toolbar)
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private static string NextNewInputToken(List<string> existingTokens)
+        {
+            for (int i = 0; i < InputTokenPresetValues.Length; i++)
+            {
+                string candidate = InputTokenPresetValues[i];
+                if (string.IsNullOrWhiteSpace(candidate) || HasInputToken(existingTokens, candidate))
+                {
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return "Custom." + existingTokens.Count;
+        }
+
+        private static bool HasInputToken(List<string> tokens, string candidate)
+        {
+            string normalizedCandidate = CombatInputActionNames.ComposeInputAction(new[] { candidate });
+            foreach (string token in tokens)
+            {
+                string normalizedToken = CombatInputActionNames.ComposeInputAction(new[] { token });
+                if (string.Equals(normalizedToken, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int InputTokenPresetIndex(string token)
+        {
+            string normalized = CombatInputActionNames.ComposeInputAction(new[] { token });
+            for (int i = 0; i < InputTokenPresetValues.Length - 1; i++)
+            {
+                if (string.Equals(InputTokenPresetValues[i], normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return InputTokenPresetValues.Length - 1;
         }
 
         private static string[] BuildInputActionPopupLabels(string inputAction, int selectedIndex)
@@ -6016,7 +6427,27 @@ namespace ActToolkit.EditorTools
                 return "Missing";
             }
 
-            return string.IsNullOrWhiteSpace(definition.stateName) ? definition.name : definition.stateName;
+            return NodeDisplayName(definition);
+        }
+
+        private static string NodeDisplayName(CombatAnimationDefinition definition)
+        {
+            if (definition == null)
+            {
+                return "Missing";
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.stateName))
+            {
+                return definition.stateName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.actionId))
+            {
+                return definition.actionId;
+            }
+
+            return string.IsNullOrWhiteSpace(definition.name) ? "Unnamed Action" : definition.name;
         }
 
         private static string ShortLabel(string value)

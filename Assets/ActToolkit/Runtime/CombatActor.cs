@@ -234,14 +234,9 @@ namespace ActToolkit
                 return;
             }
 
-            if (input.AttackPressed)
+            foreach (string pressedToken in input.PressedInputTokens)
             {
-                HandlePressedCombatInput(CombatInputActionNames.WithMoveDirection(CombatInputActionNames.LightAttack, input.Move));
-            }
-
-            if (input.HeavyPressed)
-            {
-                HandlePressedCombatInput(CombatInputActionNames.WithMoveDirection(CombatInputActionNames.HeavyAttack, input.Move));
+                HandlePressedCombatInput(CombatInputActionNames.ComposeInputAction(input.HeldInputTokens, input.Move, pressedToken));
             }
         }
 

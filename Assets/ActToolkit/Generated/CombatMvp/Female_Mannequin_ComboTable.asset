@@ -10,12 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 955fb67f54a12634a8c8af5b7a2a8f27, type: 3}
-  m_Name: "\u673A\u5668\u4EBA_ComboTable"
+  m_Name: Female_Mannequin_ComboTable
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatActionDatabase
-  entryActions:
-  - id: 3068a68a12024bbf94fe59b0ad14000c
-    inputAction: Attack.Light
-    targetDefinition: {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
-    targetActionId: action.light_3
-    serverAuthoritative: 1
+  entryActions: []
   actions: []
