@@ -293,15 +293,55 @@ namespace ActToolkit.EditorTools
             bool nextSelected = GUILayout.Toggle(selected, label, EditorStyles.toolbarButton, GUILayout.Width(width));
             if (!selected && nextSelected)
             {
-                currentPage = page;
-                EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
-                if (currentPage == EditorPage.DefinitionEditor)
-                {
-                    ApplyCharacterProfileToEditor(true);
-                }
-
+                SwitchPage(page);
                 GUI.FocusControl(null);
             }
+        }
+
+        private void SwitchPage(EditorPage page)
+        {
+            CombatAnimationDefinition graphSelection = page == EditorPage.DefinitionEditor
+                ? GetSelectedComboTableDefinition()
+                : null;
+
+            currentPage = page;
+            EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
+            if (currentPage == EditorPage.DefinitionEditor)
+            {
+                bool hasGraphSelection = graphSelection != null;
+                ApplyCharacterProfileToEditor(true, !hasGraphSelection);
+                if (hasGraphSelection)
+                {
+                    SelectActionForPreview(graphSelection);
+                    mainScroll = Vector2.zero;
+                }
+            }
+        }
+
+        private CombatAnimationDefinition GetSelectedComboTableDefinition()
+        {
+            CombatAnimationDefinition selectedAction = characterActionGraphView == null
+                ? null
+                : characterActionGraphView.SelectedDefinition;
+            return IsDefinitionInCurrentComboTable(selectedAction) ? selectedAction : null;
+        }
+
+        private bool IsDefinitionInCurrentComboTable(CombatAnimationDefinition action)
+        {
+            if (action == null || characterProfile == null || characterProfile.comboTable == null)
+            {
+                return false;
+            }
+
+            foreach (CombatAnimationDefinition candidate in GetDatabaseActions(characterProfile.comboTable))
+            {
+                if (candidate == action)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void LoadCharacterProfileFromPrefs()
@@ -2854,13 +2894,7 @@ namespace ActToolkit.EditorTools
             previewRoot = wrapper;
             previewAnimator = animator;
             CachePreviewSampleTransform();
-            Selection.activeGameObject = wrapper;
-
-            SceneView sceneView = SceneView.lastActiveSceneView;
-            if (sceneView != null)
-            {
-                sceneView.FrameSelected();
-            }
+            FramePreviewRoot(wrapper);
 
             SampleClip();
         }
@@ -2953,16 +2987,68 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
+            bool shouldClearSelection = false;
             foreach (UnityEngine.Object selected in Selection.objects)
             {
-                if (selected == null || !SelectionObjectIsInside(selected, root))
+                if (selected == null)
+                {
+                    shouldClearSelection = true;
+                    break;
+                }
+
+                if (!SelectionObjectIsInside(selected, root))
                 {
                     continue;
                 }
 
+                shouldClearSelection = true;
+                break;
+            }
+
+            if (shouldClearSelection)
+            {
+                Selection.activeObject = null;
                 Selection.objects = Array.Empty<UnityEngine.Object>();
+                ActiveEditorTracker.sharedTracker.ForceRebuild();
+            }
+        }
+
+        private static void FramePreviewRoot(GameObject root)
+        {
+            if (root == null)
+            {
                 return;
             }
+
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+            {
+                return;
+            }
+
+            sceneView.Frame(CalculatePreviewBounds(root), false);
+        }
+
+        private static Bounds CalculatePreviewBounds(GameObject root)
+        {
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                return new Bounds(root.transform.position + Vector3.up, Vector3.one * 2f);
+            }
+
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+            {
+                bounds.Encapsulate(renderers[i].bounds);
+            }
+
+            if (bounds.size.sqrMagnitude <= 0.0001f)
+            {
+                bounds.size = Vector3.one * 2f;
+            }
+
+            return bounds;
         }
 
         private static bool SelectionObjectIsInside(UnityEngine.Object selected, GameObject root)
@@ -4856,8 +4942,8 @@ namespace ActToolkit.EditorTools
     {
         private const string DatabasePrefsKey = "ActToolkit.CombatComboGraph.Database";
         private const string DefaultDatabasePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CombatActionDatabase.asset";
-        private const float CanvasWidth = 2200f;
-        private const float CanvasHeight = 1400f;
+        private const float CanvasWidth = 4800f;
+        private const float CanvasHeight = 3200f;
         private const float NodeWidth = 190f;
         private const float NodeHeight = 98f;
         private const float NodeContentX = 16f;
@@ -4873,6 +4959,7 @@ namespace ActToolkit.EditorTools
         private readonly Dictionary<CombatAnimationDefinition, GraphNode> nodeLookup = new Dictionary<CombatAnimationDefinition, GraphNode>();
         private readonly Dictionary<string, GraphNode> idLookup = new Dictionary<string, GraphNode>(StringComparer.OrdinalIgnoreCase);
         private Vector2 graphScroll;
+        private Vector2 graphViewportSize;
         private Vector2 inspectorScroll;
         private Rect entryNodeRect = new Rect(24f, 80f, NodeWidth, NodeHeight);
         private CombatActionDatabase database;
@@ -4892,6 +4979,7 @@ namespace ActToolkit.EditorTools
         private CombatActionEntry selectedEntry;
         private GraphNode draggedNode;
         private bool draggingEntryNode;
+        private bool draggingCanvas;
         private Vector2 nodeDragOffset;
         private readonly Action repaint;
         private readonly Action<CombatAnimationDefinition> openAction;
@@ -4905,6 +4993,8 @@ namespace ActToolkit.EditorTools
         }
 
         public CombatActionDatabase Database => database;
+
+        public CombatAnimationDefinition SelectedDefinition => selectedDefinition;
 
         public void Initialize()
         {
@@ -5006,6 +5096,7 @@ namespace ActToolkit.EditorTools
                     ? GUILayoutUtility.GetRect(200f, 10000f, 480f, 500f, GUILayout.ExpandWidth(true), GUILayout.Height(500f))
                     : GUILayoutUtility.GetRect(200f, 10000f, 200f, 10000f, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
                 Rect canvasRect = new Rect(0f, 0f, CanvasWidth, CanvasHeight);
+                graphViewportSize = outerRect.size;
 
                 graphScroll = GUI.BeginScrollView(outerRect, graphScroll, canvasRect);
                 try
@@ -5262,6 +5353,7 @@ namespace ActToolkit.EditorTools
 
         private void DrawConnections()
         {
+            Dictionary<GraphNode, int> incomingLabelLanes = new Dictionary<GraphNode, int>();
             if (database != null)
             {
                 database.EnsureEntryActions();
@@ -5280,8 +5372,9 @@ namespace ActToolkit.EditorTools
 
                     Vector2 start = GetEntryOutputPort().center;
                     Vector2 end = GetInputPort(targetNode.rect).center;
+                    int labelLane = NextIncomingLabelLane(incomingLabelLanes, targetNode);
                     DrawConnection(start, end, InputColor(entry.inputAction), selectedEntry == entry);
-                    DrawConnectionNode(start, end, entryNodeRect, targetNode.rect, entry.inputAction, "start", selectedEntry == entry, () =>
+                    DrawConnectionNode(start, end, entryNodeRect, targetNode.rect, entry.inputAction, "start", labelLane, selectedEntry == entry, () =>
                     {
                         selectedEntry = entry;
                         selectedLink = null;
@@ -5315,10 +5408,23 @@ namespace ActToolkit.EditorTools
 
                     Vector2 start = GetOutputPort(sourceNode.rect).center;
                     Vector2 end = GetInputPort(targetNode.rect).center;
+                    int labelLane = NextIncomingLabelLane(incomingLabelLanes, targetNode);
                     DrawConnection(start, end, InputColor(link.inputAction), selectedLink == link);
-                    DrawConnectionNode(start, end, sourceNode.rect, targetNode.rect, link.inputAction, link.startFrame + "-" + link.endFrame + "f", selectedLink == link, () => SelectLink(source, link));
+                    DrawConnectionNode(start, end, sourceNode.rect, targetNode.rect, link.inputAction, link.startFrame + "-" + link.endFrame + "f", labelLane, selectedLink == link, () => SelectLink(source, link));
                 }
             }
+        }
+
+        private static int NextIncomingLabelLane(Dictionary<GraphNode, int> incomingLabelLanes, GraphNode targetNode)
+        {
+            if (targetNode == null)
+            {
+                return 0;
+            }
+
+            incomingLabelLanes.TryGetValue(targetNode, out int lane);
+            incomingLabelLanes[targetNode] = lane + 1;
+            return lane;
         }
 
         private void DrawDragConnection(Vector2 mousePosition)
@@ -5419,7 +5525,26 @@ namespace ActToolkit.EditorTools
         private void HandleGraphEvents(Event evt)
         {
             dragMousePosition = evt.mousePosition;
-            if (evt.type == EventType.MouseDown && evt.button == 0)
+            if (evt.type == EventType.MouseDown && evt.button == 2)
+            {
+                draggingCanvas = true;
+                draggedNode = null;
+                draggingEntryNode = false;
+                draggingLink = false;
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseDrag && draggingCanvas)
+            {
+                graphScroll = ClampGraphScroll(graphScroll - evt.delta, graphViewportSize);
+                RequestRepaint();
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseUp && evt.button == 2 && draggingCanvas)
+            {
+                draggingCanvas = false;
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseDown && evt.button == 0)
             {
                 if (TryHandlePortMouseDown(evt))
                 {
@@ -5484,6 +5609,13 @@ namespace ActToolkit.EditorTools
                 draggingEntryNode = false;
                 evt.Use();
             }
+        }
+
+        private static Vector2 ClampGraphScroll(Vector2 scroll, Vector2 viewportSize)
+        {
+            return new Vector2(
+                Mathf.Clamp(scroll.x, 0f, Mathf.Max(0f, CanvasWidth - viewportSize.x)),
+                Mathf.Clamp(scroll.y, 0f, Mathf.Max(0f, CanvasHeight - viewportSize.y)));
         }
 
         private void HandleEntryNodeSelection(Event evt)
@@ -6003,9 +6135,11 @@ namespace ActToolkit.EditorTools
             Handles.color = previousColor;
         }
 
-        private static void DrawConnectionNode(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, string inputAction, string detail, bool selected, Action onClick)
+        private static void DrawConnectionNode(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, string inputAction, string detail, int lane, bool selected, Action onClick)
         {
-            Rect rect = GetConnectionLabelRect(start, end, sourceRect, targetRect, ConnectionLabelWidth(inputAction, detail));
+            Rect rect = GetConnectionLabelRect(start, end, sourceRect, targetRect, ConnectionLabelWidth(inputAction, detail), lane);
+            Color connectionColor = InputColor(inputAction);
+            DrawConnectionLabelLeader(rect, end, connectionColor, selected);
             EditorGUI.DrawRect(rect, selected ? new Color(0.28f, 0.24f, 0.12f, 0.98f) : new Color(0.18f, 0.19f, 0.20f, 0.94f));
 
             if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
@@ -6025,33 +6159,60 @@ namespace ActToolkit.EditorTools
             GUILayout.EndArea();
         }
 
-        private static Rect GetConnectionLabelRect(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, float width)
+        private static Rect GetConnectionLabelRect(Vector2 start, Vector2 end, Rect sourceRect, Rect targetRect, float width, int lane)
         {
             const float height = 30f;
-            const float verticalOffset = 36f;
+            const float horizontalGap = 16f;
 
-            float gap = targetRect.xMin - sourceRect.xMax;
-            float x = start.x + (end.x - start.x) * 0.55f - width * 0.5f;
-            float y = Mathf.Min(start.y, end.y) - verticalOffset;
+            bool targetIsToRight = end.x >= start.x;
+            float x = targetIsToRight
+                ? targetRect.xMin - width - horizontalGap
+                : targetRect.xMax + horizontalGap;
+            float y = end.y - height * 0.5f + StackedConnectionLabelOffset(lane);
 
-            if (gap < width + 24f)
+            if (targetIsToRight && x < sourceRect.xMax + 10f)
             {
-                x = sourceRect.xMax + Mathf.Max(12f, gap * 0.5f - width * 0.5f);
-                y = Mathf.Min(sourceRect.yMin, targetRect.yMin) - height - 8f;
-
-                if (x + width > targetRect.xMin - 8f)
-                {
-                    x = targetRect.xMin - width - 8f;
-                }
-
-                if (x < sourceRect.xMax + 8f)
-                {
-                    x = sourceRect.xMax + 8f;
-                    y = Mathf.Max(sourceRect.yMax, targetRect.yMax) + 8f;
-                }
+                x = Mathf.Lerp(sourceRect.xMax, targetRect.xMin, 0.5f) - width * 0.5f;
+                y = Mathf.Min(sourceRect.yMin, targetRect.yMin) - height - 8f + StackedConnectionLabelOffset(lane);
+            }
+            else if (!targetIsToRight && x + width > sourceRect.xMin - 10f)
+            {
+                x = Mathf.Lerp(targetRect.xMax, sourceRect.xMin, 0.5f) - width * 0.5f;
+                y = Mathf.Max(sourceRect.yMax, targetRect.yMax) + 8f + StackedConnectionLabelOffset(lane);
             }
 
-            return new Rect(Mathf.Max(8f, x), Mathf.Max(8f, y), width, height);
+            return new Rect(
+                Mathf.Clamp(x, 8f, CanvasWidth - width - 8f),
+                Mathf.Clamp(y, 8f, CanvasHeight - height - 8f),
+                width,
+                height);
+        }
+
+        private static float StackedConnectionLabelOffset(int lane)
+        {
+            if (lane <= 0)
+            {
+                return 0f;
+            }
+
+            int row = (lane + 1) / 2;
+            float direction = lane % 2 == 0 ? 1f : -1f;
+            return direction * row * 34f;
+        }
+
+        private static void DrawConnectionLabelLeader(Rect labelRect, Vector2 portCenter, Color color, bool selected)
+        {
+            Vector2 labelAnchor = portCenter.x < labelRect.center.x
+                ? new Vector2(labelRect.xMin, labelRect.center.y)
+                : new Vector2(labelRect.xMax, labelRect.center.y);
+
+            Color previousColor = Handles.color;
+            Handles.BeginGUI();
+            Handles.color = selected ? Color.yellow : color;
+            Handles.DrawAAPolyLine(selected ? 3f : 2f, labelAnchor, portCenter);
+            Handles.DrawSolidDisc(portCenter, Vector3.forward, selected ? 4f : 3f);
+            Handles.EndGUI();
+            Handles.color = previousColor;
         }
 
         private static float ConnectionLabelWidth(string inputAction, string detail)

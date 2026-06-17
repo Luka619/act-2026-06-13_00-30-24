@@ -10,17 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d10b25ed0533fd04ca4374d9595814a3, type: 3}
-  m_Name: CA_Combat_Overhand_Throw 2
+  m_Name: CA_Quaternius_Jump
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
-  clip: {fileID: 543990450412311274, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
-  actionId: action.light_3
-  stateName: Combat / Light Attack 3
+  clip: {fileID: -3620764259951660000, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
+  actionId: action.jump
+  stateName: Combat / Jump
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0
   rootMotionScale: 1
   markers:
-  - id: 626c58e7429b4100b92496e251040dbd
+  - id: 8336549183344687a3e158bcffcc4900
     kind: 11
     normalizedTime: 0
     duration: 0
@@ -30,24 +30,32 @@ MonoBehaviour:
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
     serverAuthoritative: 1
-  - id: ea8b4b0831f94c6796ae585bda22d56f
+  - id: 88c332bd4d644ff884bc06341c1b741f
     kind: 4
     normalizedTime: 0
-    duration: 1.55
+    duration: 0.8
     gameplayTag: combat.movement.lock
     payload:
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 0.45, g: 0.7, b: 1, a: 0.65}
     serverAuthoritative: 1
-  - id: c930b6a32baa495992a901915aaf547d
-    kind: 0
-    normalizedTime: 0.32
-    duration: 0.12
-    gameplayTag: combat.hitbox.light_3
+  - id: a925c9323df1468b93aeb623188f4aa7
+    kind: 6
+    normalizedTime: 0.25
+    duration: 0.65
+    gameplayTag: combat.combo.branch
     payload:
-    localOffset: {x: 0, y: 1.05, z: 1}
-    size: {x: 1, y: 0.7, z: 1.05}
-    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
     serverAuthoritative: 1
-  actionLinks: []
+  actionLinks:
+  - id: 622e8189c2544ea585757a0e53c19788
+    inputAction: Attack.Light
+    triggerTag: combat.combo.branch
+    targetDefinition: {fileID: 11400000, guid: 017a72bf33424bd29d3d93e6c64c31c2, type: 2}
+    targetActionId: action.jump_attack
+    startFrame: 16
+    endFrame: 52
+    serverAuthoritative: 1

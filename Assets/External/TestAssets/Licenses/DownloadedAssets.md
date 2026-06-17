@@ -49,6 +49,28 @@ Downloaded on 2026-06-13 for prototype use in the Act Unity project.
 - Preview clip copy:
   - `Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary2_Standard/UAL2_Standard.fbx`
 
+## KayKit Character Animations 1.2
+
+- Source page: https://opengameart.org/content/kaykit-character-animations
+- Original creator page: https://kaylousberg.itch.io/kaykit-character-animations
+- Downloaded file: `Assets/External/TestAssets/_Downloads/kaykit_character_animations_1.2.zip`
+- Extracted to: `Assets/External/TestAssets/Animations/KayKit_CharacterAnimations`
+- SHA256: `C9D3FBEA492DC6EDD0903939369A564C2240B892430BCD99E0AEE4876110BB8F`
+- License: CC0, confirmed by included `License.txt`
+- Useful files:
+  - `Animations/fbx/KayKit Animated Character_v1.2.fbx`
+  - `Animations/fbx/Single Animations/Attack(1h).fbx`
+  - `Animations/fbx/Single Animations/AttackCombo.fbx`
+  - `Animations/fbx/Single Animations/AttackSpinning.fbx`
+  - `Animations/fbx/Single Animations/HeavyAttack.fbx`
+  - `Animations/fbx/Single Animations/Jump.fbx`
+  - `Animations/fbx/Single Animations/Hop.fbx`
+  - `Animations/fbx/Single Animations/Roll.fbx`
+  - `Animations/fbx/Single Animations/DashFront.fbx`
+  - `Animations/fbx/Single Animations/Block.fbx`
+- Preview clip copies:
+  - `Assets/External/TestAssets/Animations/PreviewClips/KayKit_CharacterAnimations`
+
 ## Import notes
 
 - Set character rigs to Humanoid where possible.

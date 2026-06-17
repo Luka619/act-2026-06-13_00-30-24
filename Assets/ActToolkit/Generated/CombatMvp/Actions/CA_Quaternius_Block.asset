@@ -10,17 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d10b25ed0533fd04ca4374d9595814a3, type: 3}
-  m_Name: CA_Combat_Overhand_Throw 2
+  m_Name: CA_Quaternius_Block
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
-  clip: {fileID: 543990450412311274, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
-  actionId: action.light_3
-  stateName: Combat / Light Attack 3
+  clip: {fileID: 5047704512850479675, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
+  actionId: action.block
+  stateName: Combat / Block
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0
   rootMotionScale: 1
   markers:
-  - id: 626c58e7429b4100b92496e251040dbd
+  - id: 561356983253454a85d683a6e2b68d9c
     kind: 11
     normalizedTime: 0
     duration: 0
@@ -30,24 +30,14 @@ MonoBehaviour:
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
     serverAuthoritative: 1
-  - id: ea8b4b0831f94c6796ae585bda22d56f
-    kind: 4
-    normalizedTime: 0
-    duration: 1.55
-    gameplayTag: combat.movement.lock
+  - id: 5ba71ce45d4740cba5ae3d82b65e8a85
+    kind: 3
+    normalizedTime: 0.06
+    duration: 0.95
+    gameplayTag: combat.guard.active
     payload:
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
-    color: {r: 0.45, g: 0.7, b: 1, a: 0.65}
-    serverAuthoritative: 1
-  - id: c930b6a32baa495992a901915aaf547d
-    kind: 0
-    normalizedTime: 0.32
-    duration: 0.12
-    gameplayTag: combat.hitbox.light_3
-    payload:
-    localOffset: {x: 0, y: 1.05, z: 1}
-    size: {x: 1, y: 0.7, z: 1.05}
-    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
+    color: {r: 0.2, g: 0.95, b: 0.55, a: 0.75}
     serverAuthoritative: 1
   actionLinks: []

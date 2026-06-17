@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: New_Character_Profile
+  m_EditorClassIdentifier: Assembly-CSharp:ActToolkit:CharacterActionProfile
+  characterId: character.new.character
+  displayName: New Character
+  modelPrefab: {fileID: 0}
+  avatar: {fileID: 0}
+  idleClip: {fileID: 0}
+  moveClip: {fileID: 0}
+  comboTable: {fileID: 11400000, guid: fa2c0a8ef61973d4badb3a865f685427, type: 2}

@@ -12,60 +12,68 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d10b25ed0533fd04ca4374d9595814a3, type: 3}
   m_Name: CA_Combat_Overhand_Throw
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
-  clip: {fileID: -7816163768055700239, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
+  clip: {fileID: 3625414872004886998, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.light_1
-  stateName: Combat / Overhand Throw
+  stateName: Combat / Light Attack 1
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0
   rootMotionScale: 1
   markers:
-  - id: 44d7412f66894e8f8169eafa3a837adc
-    kind: 0
-    normalizedTime: 0.275
-    duration: 0.06666667
-    gameplayTag: combat.hitbox.light
-    payload:
-    localOffset: {x: 0, y: 1.1498768, z: -0.66464573}
-    size: {x: 0.8, y: 0.5775003, z: 0.8344754}
-    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
-    serverAuthoritative: 1
-  - id: 1445fd2dbc0e4559a64757c445d06af2
+  - id: fdaff9baa84a438f9c71b1530e0c52ab
     kind: 11
     normalizedTime: 0
     duration: 0
+    gameplayTag: net.sync.action
+    payload:
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  - id: 318b7c7c93a7495c93f47c8311190080
+    kind: 4
+    normalizedTime: 0
+    duration: 0.42
+    gameplayTag: combat.movement.lock
+    payload:
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 0.45, g: 0.7, b: 1, a: 0.65}
+    serverAuthoritative: 1
+  - id: 918e2cd0e1614f688ea7253b30620497
+    kind: 0
+    normalizedTime: 0.45
+    duration: 0.06
+    gameplayTag: combat.hitbox.light_1
+    payload:
+    localOffset: {x: 0, y: 1.05, z: 0.85}
+    size: {x: 0.8, y: 0.6, z: 0.9}
+    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
+    serverAuthoritative: 1
+  - id: f7ad11c05ba1408cab55a39c21a177d7
+    kind: 6
+    normalizedTime: 0.45
+    duration: 0.45
     gameplayTag: combat.combo.branch
     payload:
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
     serverAuthoritative: 1
-  - id: b1564ac71f0e48e08ee5ada46a3d3f08
-    kind: 4
-    normalizedTime: 0
-    duration: 1.3333334
-    gameplayTag: net.sync.action
-    payload:
-    localOffset: {x: 0, y: 1, z: 0.8}
-    size: {x: 0.7, y: 0.8, z: 0.9}
-    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
-    serverAuthoritative: 1
-  - id: 06e7ac471385489495936beadcb2510a
-    kind: 6
-    normalizedTime: 0.45
-    duration: 0.73333335
-    gameplayTag: net.sync.action
-    payload:
-    localOffset: {x: 0, y: 1, z: 0.8}
-    size: {x: 0.7, y: 0.8, z: 0.9}
-    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
-    serverAuthoritative: 1
   actionLinks:
-  - id: a465d1ef34b64b5a9e220f5b87d389d0
+  - id: 64c37f6c59054cd5bee84a273bc4a463
     inputAction: Attack.Light
     triggerTag: combat.combo.branch
-    targetDefinition: {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
-    targetActionId: action.light_3
-    startFrame: 36
-    endFrame: 80
+    targetDefinition: {fileID: 11400000, guid: 92b09df5592b9df409da3fb7fd2cb181, type: 2}
+    targetActionId: action.light_2
+    startFrame: 12
+    endFrame: 24
+    serverAuthoritative: 1
+  - id: f57b1bc1084f490195bbd2ac1dda6661
+    inputAction: Attack.Heavy
+    triggerTag: combat.combo.branch
+    targetDefinition: {fileID: 11400000, guid: b233f5489c604f269d90dcdad917a4d8, type: 2}
+    targetActionId: action.heavy_1
+    startFrame: 14
+    endFrame: 24
     serverAuthoritative: 1
