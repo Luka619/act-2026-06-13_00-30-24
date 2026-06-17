@@ -3,31 +3,6 @@ using UnityEngine;
 
 namespace ActToolkit
 {
-    [CreateAssetMenu(menuName = "Act Toolkit/Character Action Profile", fileName = "CharacterActionProfile")]
-    public sealed class CharacterActionProfile : ScriptableObject
-    {
-        public string characterId = "character.new";
-        public string displayName = "New Character";
-        public GameObject modelPrefab;
-        public Avatar avatar;
-        public AnimationClip idleClip;
-        public AnimationClip moveClip;
-        public CombatActionDatabase comboTable;
-
-        public void EnsureDefaults()
-        {
-            if (string.IsNullOrWhiteSpace(characterId))
-            {
-                characterId = "character." + name.ToLowerInvariant().Replace(' ', '_');
-            }
-
-            if (string.IsNullOrWhiteSpace(displayName))
-            {
-                displayName = name;
-            }
-        }
-    }
-
     [System.Serializable]
     public sealed class CombatActionEntry
     {
@@ -69,7 +44,7 @@ namespace ActToolkit
 
                 if (entryActions[i].targetDefinition != null)
                 {
-                    entryActions[i].targetActionId = entryActions[i].targetDefinition.actionId;
+                    entryActions[i].targetActionId = entryActions[i].targetDefinition.EnsureInternalActionId();
                 }
             }
         }
@@ -84,12 +59,16 @@ namespace ActToolkit
 
             foreach (CombatAnimationDefinition action in actions)
             {
-                if (action == null || string.IsNullOrWhiteSpace(action.actionId))
+                if (action == null)
                 {
                     continue;
                 }
 
-                lookup[action.actionId] = action;
+                string actionId = action.EnsureInternalActionId();
+                if (!string.IsNullOrWhiteSpace(actionId))
+                {
+                    lookup[actionId] = action;
+                }
             }
         }
 
@@ -100,7 +79,25 @@ namespace ActToolkit
                 RebuildLookup();
             }
 
-            return lookup.TryGetValue(actionId, out action);
+            if (lookup.TryGetValue(actionId, out action))
+            {
+                return true;
+            }
+
+            if (actions != null)
+            {
+                foreach (CombatAnimationDefinition candidate in actions)
+                {
+                    if (candidate != null && string.Equals(candidate.DisplayName, actionId, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        action = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            action = null;
+            return false;
         }
 
         public bool TryGetEntryAction(string inputAction, out string targetActionId)
@@ -115,7 +112,7 @@ namespace ActToolkit
                     continue;
                 }
 
-                targetActionId = entry.targetDefinition != null ? entry.targetDefinition.actionId : entry.targetActionId;
+                targetActionId = entry.targetDefinition != null ? entry.targetDefinition.EnsureInternalActionId() : entry.targetActionId;
                 return !string.IsNullOrWhiteSpace(targetActionId);
             }
 
@@ -126,7 +123,7 @@ namespace ActToolkit
                     continue;
                 }
 
-                targetActionId = entry.targetDefinition != null ? entry.targetDefinition.actionId : entry.targetActionId;
+                targetActionId = entry.targetDefinition != null ? entry.targetDefinition.EnsureInternalActionId() : entry.targetActionId;
                 return !string.IsNullOrWhiteSpace(targetActionId);
             }
 

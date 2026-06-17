@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
   clip: {fileID: 543990450412311274, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.light_3
-  stateName: Combat / Light Attack 3
+  stateName: "\u8F7B\u653B\u51FB3"
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0

@@ -9,7 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 955fb67f54a12634a8c8af5b7a2a8f27, type: 3}
+  m_Script: {fileID: 11500000, guid: 7d851bce8d0f43a48a1a6d21f6c1e17b, type: 3}
   m_Name: CharacterActionProfile
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CharacterActionProfile
   characterId: robot

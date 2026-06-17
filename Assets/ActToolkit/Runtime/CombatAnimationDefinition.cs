@@ -882,6 +882,7 @@ namespace ActToolkit
     public sealed class CombatAnimationDefinition : ScriptableObject
     {
         public AnimationClip clip;
+        [HideInInspector]
         public string actionId = "action.new";
         public string stateName = "NewAction";
         public int authoringFrameRate = 60;
@@ -894,8 +895,34 @@ namespace ActToolkit
         public List<CombatAnimationMarker> markers = new List<CombatAnimationMarker>();
         public List<CombatActionLink> actionLinks = new List<CombatActionLink>();
 
+        public string DisplayName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(stateName))
+                {
+                    return stateName;
+                }
+
+                return string.IsNullOrWhiteSpace(name) ? "Unnamed Action" : name;
+            }
+        }
+
+        public string EnsureInternalActionId()
+        {
+            if (!string.IsNullOrWhiteSpace(actionId))
+            {
+                return actionId;
+            }
+
+            string source = !string.IsNullOrWhiteSpace(name) ? name : DisplayName;
+            actionId = "action." + SanitizeInternalActionId(source);
+            return actionId;
+        }
+
         public void EnsureMarkers()
         {
+            EnsureInternalActionId();
             authoringFrameRate = Mathf.Max(1, authoringFrameRate);
 
             if (markers == null)
@@ -915,6 +942,7 @@ namespace ActToolkit
 
         public void EnsureActionLinks()
         {
+            EnsureInternalActionId();
             authoringFrameRate = Mathf.Max(1, authoringFrameRate);
 
             if (actionLinks == null)
@@ -932,7 +960,7 @@ namespace ActToolkit
 
                 if (actionLinks[i].targetDefinition != null)
                 {
-                    actionLinks[i].targetActionId = actionLinks[i].targetDefinition.actionId;
+                    actionLinks[i].targetActionId = actionLinks[i].targetDefinition.EnsureInternalActionId();
                 }
             }
         }
@@ -941,6 +969,34 @@ namespace ActToolkit
         {
             EnsureMarkers();
             markers.Sort((left, right) => left.normalizedTime.CompareTo(right.normalizedTime));
+        }
+
+        private static string SanitizeInternalActionId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "unnamed";
+            }
+
+            char[] chars = value.Trim().ToLowerInvariant().ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                {
+                    continue;
+                }
+
+                chars[i] = '_';
+            }
+
+            string result = new string(chars).Trim('_');
+            while (result.Contains("__"))
+            {
+                result = result.Replace("__", "_");
+            }
+
+            return string.IsNullOrWhiteSpace(result) ? "unnamed" : result;
         }
     }
 }

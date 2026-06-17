@@ -13,7 +13,7 @@ namespace ActToolkit.EditorTools
     {
         private const string CharacterProfilePrefsKey = "ActToolkit.CharacterActionEditor.Profile";
         private const string EditorPagePrefsKey = "ActToolkit.CharacterActionEditor.Page";
-        private const string DefaultCharacterProfilePath = ActToolkitEditorUtilities.CombatMvpFolder + "/MVP_CharacterActionProfile.asset";
+        private const string DefaultCharacterProfilePath = ActToolkitEditorUtilities.CombatMvpFolder + "/Female_Mannequin_Profile.asset";
         private const string ModelFolderPrefsKey = "ActToolkit.CombatAnimationEditor.ModelFolder";
         private const string AnimationFolderPrefsKey = "ActToolkit.CombatAnimationEditor.AnimationFolder";
         private const string PreviewModelNamePrefix = "ActPreview_";
@@ -95,6 +95,11 @@ namespace ActToolkit.EditorTools
         private bool previewSceneRefreshScheduled;
         private bool scheduledPreviewSceneCreateNew;
         private bool keepSelectedActionOnScheduledPreviewRefresh;
+        private readonly List<ComboPreviewStep> comboPreviewSteps = new List<ComboPreviewStep>();
+        private CombatAnimationDefinition comboPreviewTargetDefinition;
+        private float comboPreviewTime;
+        private string comboPreviewPathLabel = string.Empty;
+        private bool comboPreviewActive;
 
         [MenuItem("Tools/Act Toolkit/Character Action Editor")]
         [MenuItem("Tools/Act Toolkit/Combat Animation Editor")]
@@ -114,7 +119,7 @@ namespace ActToolkit.EditorTools
                 EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ComboTable),
                 (int)EditorPage.CharacterSetup,
                 (int)EditorPage.DefinitionEditor);
-            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectActionForPreview);
+            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview);
             characterActionGraphView.Initialize();
             LoadCharacterProfileFromPrefs();
             if (characterProfile == null)
@@ -174,6 +179,7 @@ namespace ActToolkit.EditorTools
 
         private void OnGUI()
         {
+            EnsureDefaultCharacterProfileLoaded();
             EditorGUILayout.Space(6f);
             DrawCharacterProfileHeader();
             EditorGUILayout.Space(4f);
@@ -230,11 +236,10 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.LabelField("Character", EditorStyles.boldLabel, GUILayout.Width(76f));
 
             EditorGUI.BeginChangeCheck();
-            characterProfile = (CharacterActionProfile)EditorGUILayout.ObjectField(characterProfile, typeof(CharacterActionProfile), false, GUILayout.MinWidth(180f));
+            UnityEngine.Object selectedCharacterObject = EditorGUILayout.ObjectField(characterProfile, typeof(UnityEngine.Object), false, GUILayout.MinWidth(180f));
             if (EditorGUI.EndChangeCheck())
             {
-                SaveCharacterProfilePrefs();
-                ApplyCharacterProfileToEditor(true);
+                SelectCharacterProfileObject(selectedCharacterObject);
             }
 
             if (GUILayout.Button("New Character", GUILayout.Width(106f)))
@@ -312,7 +317,7 @@ namespace ActToolkit.EditorTools
                 ApplyCharacterProfileToEditor(true, !hasGraphSelection);
                 if (hasGraphSelection)
                 {
-                    SelectActionForPreview(graphSelection);
+                    SelectSingleActionForPreview(graphSelection);
                     mainScroll = Vector2.zero;
                 }
             }
@@ -348,10 +353,166 @@ namespace ActToolkit.EditorTools
         {
             string profilePath = EditorPrefs.GetString(CharacterProfilePrefsKey, DefaultCharacterProfilePath);
             characterProfile = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(profilePath);
-            if (characterProfile == null)
+            if (!IsUsableCharacterProfile(characterProfile))
             {
                 characterProfile = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(DefaultCharacterProfilePath);
             }
+
+            if (!IsUsableCharacterProfile(characterProfile))
+            {
+                characterProfile = FindBestCharacterProfileAsset();
+            }
+
+            if (characterProfile != null)
+            {
+                SaveCharacterProfilePrefs();
+            }
+        }
+
+        private void EnsureDefaultCharacterProfileLoaded()
+        {
+            if (characterProfile != null && !IsPlaceholderCharacterProfile(characterProfile))
+            {
+                return;
+            }
+
+            CharacterActionProfile previousProfile = characterProfile;
+            LoadCharacterProfileFromPrefs();
+            if (characterProfile == null || characterProfile == previousProfile)
+            {
+                return;
+            }
+
+            ApplyCharacterProfileToEditor(true);
+        }
+
+        private static bool IsUsableCharacterProfile(CharacterActionProfile profile)
+        {
+            if (profile == null)
+            {
+                return false;
+            }
+
+            if (profile.modelPrefab != null)
+            {
+                return true;
+            }
+
+            if (profile.comboTable != null
+                && profile.comboTable.actions != null
+                && profile.comboTable.actions.Count > 0
+                && !IsPlaceholderCharacterProfile(profile))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsPlaceholderCharacterProfile(CharacterActionProfile profile)
+        {
+            if (profile == null)
+            {
+                return true;
+            }
+
+            return string.Equals(profile.name, "New_Character_Profile", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(profile.displayName, "New Character", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(profile.characterId, "character.new.character", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static CharacterActionProfile FindBestCharacterProfileAsset()
+        {
+            string[] preferredPaths =
+            {
+                ActToolkitEditorUtilities.CombatMvpFolder + "/Female_Mannequin_Profile.asset",
+                ActToolkitEditorUtilities.CombatMvpFolder + "/CharacterActionProfile.asset"
+            };
+
+            foreach (string path in preferredPaths)
+            {
+                CharacterActionProfile preferred = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(path);
+                if (preferred != null)
+                {
+                    return preferred;
+                }
+            }
+
+            string[] guids = AssetDatabase.FindAssets("t:CharacterActionProfile", new[] { ActToolkitEditorUtilities.CombatMvpFolder });
+            CharacterActionProfile bestProfile = null;
+            int bestScore = int.MinValue;
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                CharacterActionProfile candidate = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(path);
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                int score = 0;
+                if (candidate.modelPrefab != null)
+                {
+                    score += 100;
+                }
+
+                if (candidate.comboTable != null)
+                {
+                    score += 60;
+                    if (candidate.comboTable.actions != null)
+                    {
+                        score += Mathf.Min(candidate.comboTable.actions.Count, 20);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate.displayName)
+                    && !candidate.displayName.StartsWith("New", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 10;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestProfile = candidate;
+                }
+            }
+
+            return bestProfile;
+        }
+
+        private static CharacterActionProfile FindCharacterProfileForModel(GameObject modelPrefab)
+        {
+            if (modelPrefab == null)
+            {
+                return null;
+            }
+
+            string modelPath = AssetDatabase.GetAssetPath(modelPrefab);
+            string[] guids = AssetDatabase.FindAssets("t:CharacterActionProfile");
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                CharacterActionProfile candidate = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(path);
+                if (candidate == null || candidate.modelPrefab == null)
+                {
+                    continue;
+                }
+
+                if (candidate.modelPrefab == modelPrefab)
+                {
+                    return candidate;
+                }
+
+                string candidateModelPath = AssetDatabase.GetAssetPath(candidate.modelPrefab);
+                if (!string.IsNullOrWhiteSpace(modelPath)
+                    && string.Equals(candidateModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private void SaveCharacterProfilePrefs()
@@ -510,6 +671,7 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
+            ClearComboPreview();
             definition = firstAction;
             clip = definition.clip;
             normalizedTime = 0f;
@@ -823,7 +985,7 @@ namespace ActToolkit.EditorTools
 
             if (characterActionGraphView == null)
             {
-                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectActionForPreview);
+                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview);
                 characterActionGraphView.Initialize();
             }
 
@@ -1205,13 +1367,7 @@ namespace ActToolkit.EditorTools
                 return "None";
             }
 
-            string label = string.IsNullOrWhiteSpace(action.stateName) ? action.actionId : action.stateName;
-            if (!string.IsNullOrWhiteSpace(action.actionId) && !string.Equals(label, action.actionId, StringComparison.OrdinalIgnoreCase))
-            {
-                label += " (" + action.actionId + ")";
-            }
-
-            return ShortenMiddle(label, 54);
+            return ShortenMiddle(action.DisplayName, 54);
         }
 
         private CombatAnimationDefinition ResolveEntryTarget(CombatActionDatabase database, CombatActionEntry entry)
@@ -1381,19 +1537,20 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
-            SelectActionForPreview(action);
+            SelectSingleActionForPreview(action);
             currentPage = EditorPage.DefinitionEditor;
             EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
             mainScroll = Vector2.zero;
         }
 
-        private void SelectActionForPreview(CombatAnimationDefinition action)
+        private void SelectSingleActionForPreview(CombatAnimationDefinition action)
         {
             if (action == null)
             {
                 return;
             }
 
+            ClearComboPreview();
             definition = action;
             clip = action.clip;
             selectedMarkerIndex = -1;
@@ -1416,6 +1573,285 @@ namespace ActToolkit.EditorTools
             }
 
             Repaint();
+        }
+
+        private void SelectComboActionForPreview(CombatAnimationDefinition action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            if (!BuildComboPreview(action))
+            {
+                SelectSingleActionForPreview(action);
+                return;
+            }
+
+            comboPreviewTargetDefinition = action;
+            comboPreviewTime = 0f;
+            selectedMarkerIndex = -1;
+            SetComboPreviewTime(0f, false);
+            isPlaying = true;
+            lastUpdateTime = EditorApplication.timeSinceStartup;
+
+            EnsureSelectedPreviewModelInstance();
+            isPlaying = true;
+            lastUpdateTime = EditorApplication.timeSinceStartup;
+            if (previewRoot == null)
+            {
+                keepSelectedActionOnScheduledPreviewRefresh = true;
+                SchedulePreviewSceneRefresh(true);
+            }
+            else
+            {
+                if (comboPreviewActive)
+                {
+                    isPlaying = true;
+                    lastUpdateTime = EditorApplication.timeSinceStartup;
+                }
+
+                SampleClip();
+            }
+
+            Repaint();
+        }
+
+        private bool BuildComboPreview(CombatAnimationDefinition target)
+        {
+            comboPreviewSteps.Clear();
+            comboPreviewPathLabel = string.Empty;
+            comboPreviewTargetDefinition = null;
+            comboPreviewActive = false;
+
+            CombatActionDatabase database = characterProfile == null ? null : characterProfile.comboTable;
+            if (database == null || database.entryActions == null || target == null)
+            {
+                return false;
+            }
+
+            database.EnsureEntryActions();
+            database.RebuildLookup();
+
+            List<ComboPreviewStep> workingSteps = new List<ComboPreviewStep>();
+            HashSet<CombatAnimationDefinition> visited = new HashSet<CombatAnimationDefinition>();
+            foreach (CombatActionEntry entry in database.entryActions)
+            {
+                CombatAnimationDefinition entryTarget = ResolveEntryTarget(database, entry);
+                if (entryTarget == null)
+                {
+                    continue;
+                }
+
+                workingSteps.Clear();
+                visited.Clear();
+                workingSteps.Add(new ComboPreviewStep(entryTarget, entry == null ? string.Empty : entry.inputAction));
+                visited.Add(entryTarget);
+
+                if (!TryBuildComboPreviewPath(database, entryTarget, target, workingSteps, visited, 0))
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < workingSteps.Count; i++)
+                {
+                    comboPreviewSteps.Add(workingSteps[i].Clone());
+                }
+
+                comboPreviewPathLabel = BuildComboPreviewPathLabel(comboPreviewSteps);
+                comboPreviewActive = comboPreviewSteps.Count > 0;
+                return comboPreviewActive;
+            }
+
+            return false;
+        }
+
+        private bool TryBuildComboPreviewPath(
+            CombatActionDatabase database,
+            CombatAnimationDefinition current,
+            CombatAnimationDefinition target,
+            List<ComboPreviewStep> steps,
+            HashSet<CombatAnimationDefinition> visited,
+            int depth)
+        {
+            if (current == null || target == null || steps.Count == 0)
+            {
+                return false;
+            }
+
+            if (current == target)
+            {
+                return true;
+            }
+
+            if (depth > 32)
+            {
+                return false;
+            }
+
+            current.EnsureActionLinks();
+            foreach (CombatActionLink link in current.actionLinks)
+            {
+                CombatAnimationDefinition next = ResolveLinkTarget(database, link);
+                if (next == null || visited.Contains(next))
+                {
+                    continue;
+                }
+
+                ComboPreviewStep sourceStep = steps[steps.Count - 1];
+                CombatActionLink previousOutgoingLink = sourceStep.outgoingLink;
+                sourceStep.outgoingLink = link;
+                steps.Add(new ComboPreviewStep(next, string.Empty));
+                visited.Add(next);
+
+                if (TryBuildComboPreviewPath(database, next, target, steps, visited, depth + 1))
+                {
+                    return true;
+                }
+
+                visited.Remove(next);
+                steps.RemoveAt(steps.Count - 1);
+                sourceStep.outgoingLink = previousOutgoingLink;
+            }
+
+            return false;
+        }
+
+        private static string BuildComboPreviewPathLabel(List<ComboPreviewStep> steps)
+        {
+            if (steps == null || steps.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            string label = "Entry";
+            if (!string.IsNullOrWhiteSpace(steps[0].entryInputAction))
+            {
+                label += " " + CombatInputActionNames.DisplayLabel(steps[0].entryInputAction);
+            }
+
+            for (int i = 0; i < steps.Count; i++)
+            {
+                ComboPreviewStep step = steps[i];
+                label += " -> " + (step.action == null ? "Missing" : step.action.DisplayName);
+                if (step.outgoingLink != null && i < steps.Count - 1)
+                {
+                    label += " @" + step.outgoingLink.startFrame + "f";
+                }
+            }
+
+            return label;
+        }
+
+        private void ClearComboPreview()
+        {
+            comboPreviewActive = false;
+            comboPreviewSteps.Clear();
+            comboPreviewTargetDefinition = null;
+            comboPreviewTime = 0f;
+            comboPreviewPathLabel = string.Empty;
+        }
+
+        private float GetComboPreviewTotalDuration()
+        {
+            if (!comboPreviewActive || comboPreviewSteps.Count == 0)
+            {
+                return 0f;
+            }
+
+            float total = 0f;
+            for (int i = 0; i < comboPreviewSteps.Count; i++)
+            {
+                total += GetComboPreviewStepDuration(i);
+            }
+
+            return total;
+        }
+
+        private float GetComboPreviewStepDuration(int index)
+        {
+            if (index < 0 || index >= comboPreviewSteps.Count)
+            {
+                return 0f;
+            }
+
+            ComboPreviewStep step = comboPreviewSteps[index];
+            AnimationClip stepClip = step.action == null ? null : step.action.clip;
+            if (stepClip == null)
+            {
+                return 0f;
+            }
+
+            if (step.outgoingLink == null)
+            {
+                return Mathf.Max(0f, stepClip.length);
+            }
+
+            int frameRate = Mathf.Max(1, step.action == null ? 60 : step.action.authoringFrameRate);
+            float transitionTime = step.outgoingLink.startFrame / (float)frameRate;
+            return Mathf.Clamp(transitionTime, 0f, Mathf.Max(0f, stepClip.length));
+        }
+
+        private ComboPreviewStep GetCurrentComboPreviewStep()
+        {
+            if (!comboPreviewActive || comboPreviewSteps.Count == 0)
+            {
+                return null;
+            }
+
+            float cursor = 0f;
+            for (int i = 0; i < comboPreviewSteps.Count; i++)
+            {
+                float duration = GetComboPreviewStepDuration(i);
+                if (comboPreviewTime <= cursor + duration || i == comboPreviewSteps.Count - 1)
+                {
+                    return comboPreviewSteps[i];
+                }
+
+                cursor += duration;
+            }
+
+            return comboPreviewSteps[comboPreviewSteps.Count - 1];
+        }
+
+        private void SetComboPreviewTime(float time, bool sample)
+        {
+            if (!comboPreviewActive || comboPreviewSteps.Count == 0)
+            {
+                return;
+            }
+
+            float totalDuration = GetComboPreviewTotalDuration();
+            comboPreviewTime = Mathf.Clamp(time, 0f, Mathf.Max(0f, totalDuration));
+
+            float cursor = 0f;
+            for (int i = 0; i < comboPreviewSteps.Count; i++)
+            {
+                ComboPreviewStep step = comboPreviewSteps[i];
+                float duration = GetComboPreviewStepDuration(i);
+                if (comboPreviewTime > cursor + duration && i < comboPreviewSteps.Count - 1)
+                {
+                    cursor += duration;
+                    continue;
+                }
+
+                definition = step.action;
+                clip = definition == null ? null : definition.clip;
+                float localTime = Mathf.Clamp(comboPreviewTime - cursor, 0f, clip == null ? 0f : clip.length);
+                normalizedTime = clip == null || clip.length <= 0f ? 0f : Mathf.Clamp01(localTime / clip.length);
+                int animationIndex = FindAnimationCandidateIndex(clip);
+                if (animationIndex >= 0)
+                {
+                    selectedAnimationIndex = animationIndex;
+                }
+
+                if (sample)
+                {
+                    SampleCurrentClip();
+                }
+
+                return;
+            }
         }
 
         private void RefreshComboGraphView(CombatActionDatabase database)
@@ -1613,8 +2049,7 @@ namespace ActToolkit.EditorTools
             EditorGUILayout.LabelField("Action Definition", EditorStyles.boldLabel);
 
             EditorGUI.BeginChangeCheck();
-            definition.actionId = EditorGUILayout.TextField("Action Id", definition.actionId);
-            definition.stateName = EditorGUILayout.TextField("State Name", definition.stateName);
+            definition.stateName = EditorGUILayout.TextField("Name", definition.stateName);
             definition.authoringFrameRate = Mathf.Max(1, EditorGUILayout.IntField("Authoring FPS", definition.authoringFrameRate));
             definition.requiresNetworkSync = EditorGUILayout.Toggle("Require Net Sync", definition.requiresNetworkSync);
             definition.loopPreview = EditorGUILayout.Toggle("Loop Preview", definition.loopPreview);
@@ -1622,6 +2057,7 @@ namespace ActToolkit.EditorTools
             definition.clip = clip;
             if (EditorGUI.EndChangeCheck())
             {
+                definition.EnsureInternalActionId();
                 EditorUtility.SetDirty(definition);
             }
 
@@ -1804,7 +2240,7 @@ namespace ActToolkit.EditorTools
                 return "None";
             }
 
-            return string.IsNullOrWhiteSpace(definition.actionId) ? definition.name : definition.actionId;
+            return definition.DisplayName;
         }
 
         private string GetFrameStatus()
@@ -2026,6 +2462,12 @@ namespace ActToolkit.EditorTools
 
         private void DrawPreviewControls()
         {
+            if (comboPreviewActive)
+            {
+                DrawComboPreviewControls();
+                return;
+            }
+
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Preview", EditorStyles.boldLabel);
 
@@ -2066,6 +2508,119 @@ namespace ActToolkit.EditorTools
             drawAllMarkers = EditorGUILayout.Toggle("Draw All Markers", drawAllMarkers);
             snapToFrames = EditorGUILayout.Toggle("Snap To Frames", snapToFrames);
 
+            EditorGUILayout.EndVertical();
+        }
+
+        private void SelectCharacterProfileObject(UnityEngine.Object selectedObject)
+        {
+            if (selectedObject == null)
+            {
+                characterProfile = null;
+                SaveCharacterProfilePrefs();
+                currentPage = EditorPage.CharacterSetup;
+                EditorPrefs.SetInt(EditorPagePrefsKey, (int)currentPage);
+                return;
+            }
+
+            CharacterActionProfile selectedProfile = ResolveCharacterProfileSelection(selectedObject);
+            if (selectedProfile == null)
+            {
+                ShowNotification(new GUIContent("Select a CharacterActionProfile or a model used by one."));
+                return;
+            }
+
+            characterProfile = selectedProfile;
+            SaveCharacterProfilePrefs();
+            ApplyCharacterProfileToEditor(true);
+        }
+
+        private static CharacterActionProfile ResolveCharacterProfileSelection(UnityEngine.Object selectedObject)
+        {
+            if (selectedObject == null)
+            {
+                return null;
+            }
+
+            if (selectedObject is CharacterActionProfile directProfile)
+            {
+                return directProfile;
+            }
+
+            string selectedPath = AssetDatabase.GetAssetPath(selectedObject);
+            if (!string.IsNullOrWhiteSpace(selectedPath))
+            {
+                CharacterActionProfile profileAtPath = AssetDatabase.LoadAssetAtPath<CharacterActionProfile>(selectedPath);
+                if (profileAtPath != null)
+                {
+                    return profileAtPath;
+                }
+            }
+
+            if (selectedObject is GameObject modelPrefab)
+            {
+                return FindCharacterProfileForModel(modelPrefab);
+            }
+
+            return null;
+        }
+
+        private void DrawComboPreviewControls()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Combo Preview", EditorStyles.boldLabel);
+
+            string targetName = comboPreviewTargetDefinition == null ? "None" : comboPreviewTargetDefinition.DisplayName;
+            EditorGUILayout.LabelField("Target", targetName);
+            EditorGUILayout.LabelField(new GUIContent("Path", comboPreviewPathLabel), ShortenMiddle(comboPreviewPathLabel, 96));
+
+            float totalDuration = GetComboPreviewTotalDuration();
+            EditorGUI.BeginChangeCheck();
+            float nextTime = EditorGUILayout.Slider("Combo Time", comboPreviewTime, 0f, Mathf.Max(0.001f, totalDuration));
+            if (EditorGUI.EndChangeCheck())
+            {
+                SetComboPreviewTime(nextTime, true);
+            }
+
+            ComboPreviewStep currentStep = GetCurrentComboPreviewStep();
+            string currentActionName = currentStep == null || currentStep.action == null ? "None" : currentStep.action.DisplayName;
+            float localSeconds = clip == null ? 0f : Mathf.Clamp01(normalizedTime) * clip.length;
+            int currentFrame = clip == null || definition == null
+                ? 0
+                : Mathf.RoundToInt(localSeconds * Mathf.Max(1, definition.authoringFrameRate));
+            EditorGUILayout.LabelField("Current Action", currentActionName);
+            EditorGUILayout.LabelField("Seconds", comboPreviewTime.ToString("0.000") + " / " + totalDuration.ToString("0.000"));
+            EditorGUILayout.LabelField("Action Frame", currentFrame + "f");
+
+            if (currentStep != null && currentStep.outgoingLink != null)
+            {
+                EditorGUILayout.LabelField(
+                    "Next Branch",
+                    CombatInputActionNames.DisplayLabel(currentStep.outgoingLink.inputAction)
+                        + " @ " + currentStep.outgoingLink.startFrame + "-" + currentStep.outgoingLink.endFrame + "f");
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(isPlaying ? "Pause" : "Play", GUILayout.Height(26f)))
+            {
+                isPlaying = !isPlaying;
+                lastUpdateTime = EditorApplication.timeSinceStartup;
+                SampleClip();
+            }
+
+            if (GUILayout.Button("Stop", GUILayout.Height(26f)))
+            {
+                isPlaying = false;
+                SetComboPreviewTime(0f, true);
+            }
+
+            if (GUILayout.Button("Sample", GUILayout.Height(26f)))
+            {
+                SampleClip();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            drawAllMarkers = EditorGUILayout.Toggle("Draw All Markers", drawAllMarkers);
             EditorGUILayout.EndVertical();
         }
 
@@ -2235,8 +2790,7 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUI.BeginChangeCheck();
-            definition.actionId = EditorGUILayout.TextField("Action Id", definition.actionId);
-            definition.stateName = EditorGUILayout.TextField("State Name", definition.stateName);
+            definition.stateName = EditorGUILayout.TextField("Name", definition.stateName);
             definition.authoringFrameRate = Mathf.Max(1, EditorGUILayout.IntField("Authoring FPS", definition.authoringFrameRate));
             definition.requiresNetworkSync = EditorGUILayout.Toggle("Require Net Sync", definition.requiresNetworkSync);
             definition.loopPreview = EditorGUILayout.Toggle("Loop Preview", definition.loopPreview);
@@ -2244,6 +2798,7 @@ namespace ActToolkit.EditorTools
             definition.clip = clip;
             if (EditorGUI.EndChangeCheck())
             {
+                definition.EnsureInternalActionId();
                 EditorUtility.SetDirty(definition);
             }
 
@@ -2477,10 +3032,9 @@ namespace ActToolkit.EditorTools
                 link.targetDefinition = (CombatAnimationDefinition)EditorGUILayout.ObjectField("Target Definition", link.targetDefinition, typeof(CombatAnimationDefinition), false);
                 if (link.targetDefinition != null)
                 {
-                    link.targetActionId = link.targetDefinition.actionId;
+                    link.targetActionId = link.targetDefinition.EnsureInternalActionId();
                 }
 
-                link.targetActionId = EditorGUILayout.TextField("Target Action Id", link.targetActionId);
                 link.startFrame = Mathf.Clamp(EditorGUILayout.IntField("Start Frame", link.startFrame), 0, Mathf.Max(0, frameCount));
                 link.endFrame = Mathf.Clamp(EditorGUILayout.IntField("End Frame", link.endFrame), 0, Mathf.Max(0, frameCount));
                 link.serverAuthoritative = EditorGUILayout.Toggle("Server Auth", link.serverAuthoritative);
@@ -3379,6 +3933,7 @@ namespace ActToolkit.EditorTools
 
             clip = selectedClip;
             normalizedTime = 0f;
+            ClearComboPreview();
 
             if (definition != null)
             {
@@ -4279,7 +4834,7 @@ namespace ActToolkit.EditorTools
 
         private void EditorUpdate()
         {
-            if (!isPlaying || clip == null)
+            if (!isPlaying)
             {
                 return;
             }
@@ -4287,6 +4842,32 @@ namespace ActToolkit.EditorTools
             double now = EditorApplication.timeSinceStartup;
             float delta = (float)(now - lastUpdateTime);
             lastUpdateTime = now;
+
+            if (comboPreviewActive)
+            {
+                float totalDuration = GetComboPreviewTotalDuration();
+                comboPreviewTime += delta;
+                bool comboShouldLoop = comboPreviewTargetDefinition != null && comboPreviewTargetDefinition.loopPreview;
+                if (comboPreviewTime > totalDuration)
+                {
+                    comboPreviewTime = comboShouldLoop && totalDuration > 0f ? comboPreviewTime % totalDuration : totalDuration;
+                    isPlaying = comboShouldLoop;
+                }
+
+                SetComboPreviewTime(comboPreviewTime, true);
+                if (now >= nextEditorRepaintTime)
+                {
+                    nextEditorRepaintTime = now + EditorRepaintInterval;
+                    Repaint();
+                }
+
+                return;
+            }
+
+            if (clip == null)
+            {
+                return;
+            }
 
             float length = Mathf.Max(0.001f, clip.length);
             normalizedTime += delta / length;
@@ -4307,6 +4888,17 @@ namespace ActToolkit.EditorTools
         }
 
         private void SampleClip()
+        {
+            if (comboPreviewActive)
+            {
+                SetComboPreviewTime(comboPreviewTime, true);
+                return;
+            }
+
+            SampleCurrentClip();
+        }
+
+        private void SampleCurrentClip()
         {
             if (previewRoot == null || clip == null)
             {
@@ -4426,6 +5018,27 @@ namespace ActToolkit.EditorTools
             if (AnimationMode.InAnimationMode())
             {
                 AnimationMode.StopAnimationMode();
+            }
+        }
+
+        private sealed class ComboPreviewStep
+        {
+            public readonly CombatAnimationDefinition action;
+            public readonly string entryInputAction;
+            public CombatActionLink outgoingLink;
+
+            public ComboPreviewStep(CombatAnimationDefinition action, string entryInputAction)
+            {
+                this.action = action;
+                this.entryInputAction = entryInputAction;
+            }
+
+            public ComboPreviewStep Clone()
+            {
+                return new ComboPreviewStep(action, entryInputAction)
+                {
+                    outgoingLink = outgoingLink
+                };
             }
         }
 
@@ -4618,9 +5231,9 @@ namespace ActToolkit.EditorTools
                 issues.Add(new CombatAnimationValidationIssue(MessageType.Error, "No animation clip is assigned."));
             }
 
-            if (string.IsNullOrWhiteSpace(definition.actionId))
+            if (string.IsNullOrWhiteSpace(definition.stateName))
             {
-                issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "Action Id is empty. Use a stable id for runtime and server references."));
+                issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "State name is empty. Give this action a readable name."));
             }
 
             bool hasNetworkSync = false;
@@ -4745,9 +5358,9 @@ namespace ActToolkit.EditorTools
                     issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "Action link " + (i + 1) + " has an empty input action."));
                 }
 
-                if (string.IsNullOrWhiteSpace(link.targetActionId))
+                if (link.targetDefinition == null && string.IsNullOrWhiteSpace(link.targetActionId))
                 {
-                    issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "Action link " + (i + 1) + " has no target action id."));
+                    issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "Action link " + (i + 1) + " has no target definition."));
                 }
 
                 if (link.endFrame < link.startFrame)
@@ -4826,7 +5439,7 @@ namespace ActToolkit.EditorTools
             totalWarnings = 0;
 
             string[] guids = AssetDatabase.FindAssets("t:CombatAnimationDefinition");
-            Dictionary<string, int> actionIdCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, int> stateNameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             foreach (string guid in guids)
             {
@@ -4840,10 +5453,10 @@ namespace ActToolkit.EditorTools
                 definition.EnsureMarkers();
                 definition.EnsureActionLinks();
 
-                if (!string.IsNullOrWhiteSpace(definition.actionId))
+                if (!string.IsNullOrWhiteSpace(definition.stateName))
                 {
-                    actionIdCounts.TryGetValue(definition.actionId, out int count);
-                    actionIdCounts[definition.actionId] = count + 1;
+                    stateNameCounts.TryGetValue(definition.stateName, out int count);
+                    stateNameCounts[definition.stateName] = count + 1;
                 }
 
                 rows.Add(new ValidationRow(definition, path, CombatAnimationValidation.ValidateDefinition(definition)));
@@ -4851,11 +5464,11 @@ namespace ActToolkit.EditorTools
 
             foreach (ValidationRow row in rows)
             {
-                if (!string.IsNullOrWhiteSpace(row.definition.actionId)
-                    && actionIdCounts.TryGetValue(row.definition.actionId, out int count)
+                if (!string.IsNullOrWhiteSpace(row.definition.stateName)
+                    && stateNameCounts.TryGetValue(row.definition.stateName, out int count)
                     && count > 1)
                 {
-                    row.issues.Add(new CombatAnimationValidationIssue(MessageType.Error, "Duplicate action id: " + row.definition.actionId));
+                    row.issues.Add(new CombatAnimationValidationIssue(MessageType.Warning, "Duplicate state name: " + row.definition.stateName));
                 }
 
                 totalErrors += CombatAnimationValidation.ErrorCount(row.issues);
@@ -4878,7 +5491,7 @@ namespace ActToolkit.EditorTools
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(row.definition.actionId + "  (" + row.definition.name + ")", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(row.definition.DisplayName + "  (" + row.definition.name + ")", EditorStyles.boldLabel);
             GUILayout.FlexibleSpace();
             GUILayout.Label(errors + " errors / " + warnings + " warnings", GUILayout.Width(150f));
             if (GUILayout.Button("Ping", GUILayout.Width(58f)))
@@ -5186,10 +5799,9 @@ namespace ActToolkit.EditorTools
             selectedEntry.targetDefinition = (CombatAnimationDefinition)EditorGUILayout.ObjectField("Target", selectedEntry.targetDefinition, typeof(CombatAnimationDefinition), false);
             if (selectedEntry.targetDefinition != null)
             {
-                selectedEntry.targetActionId = selectedEntry.targetDefinition.actionId;
+                selectedEntry.targetActionId = selectedEntry.targetDefinition.EnsureInternalActionId();
             }
 
-            selectedEntry.targetActionId = EditorGUILayout.TextField("Target Id", selectedEntry.targetActionId);
             selectedEntry.serverAuthoritative = EditorGUILayout.Toggle("Server Auth", selectedEntry.serverAuthoritative);
             if (EditorGUI.EndChangeCheck())
             {
@@ -5218,17 +5830,16 @@ namespace ActToolkit.EditorTools
                 ? 0
                 : Mathf.Max(1, Mathf.RoundToInt(selectedLinkSource.clip.length * Mathf.Max(1, selectedLinkSource.authoringFrameRate)));
 
-            EditorGUILayout.LabelField("Source", selectedLinkSource.actionId, EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField("Source", NodeDisplayName(selectedLinkSource), EditorStyles.miniBoldLabel);
             EditorGUI.BeginChangeCheck();
             selectedLink.inputAction = DrawInputActionPopup("Input", selectedLink.inputAction);
             selectedLink.triggerTag = EditorGUILayout.TextField("Trigger Tag", selectedLink.triggerTag);
             selectedLink.targetDefinition = (CombatAnimationDefinition)EditorGUILayout.ObjectField("Target", selectedLink.targetDefinition, typeof(CombatAnimationDefinition), false);
             if (selectedLink.targetDefinition != null)
             {
-                selectedLink.targetActionId = selectedLink.targetDefinition.actionId;
+                selectedLink.targetActionId = selectedLink.targetDefinition.EnsureInternalActionId();
             }
 
-            selectedLink.targetActionId = EditorGUILayout.TextField("Target Id", selectedLink.targetActionId);
             selectedLink.startFrame = Mathf.Clamp(EditorGUILayout.IntField("Start Frame", selectedLink.startFrame), 0, Mathf.Max(0, frameCount));
             selectedLink.endFrame = Mathf.Clamp(EditorGUILayout.IntField("End Frame", selectedLink.endFrame), selectedLink.startFrame, Mathf.Max(selectedLink.startFrame, frameCount));
             selectedLink.serverAuthoritative = EditorGUILayout.Toggle("Server Auth", selectedLink.serverAuthoritative);
@@ -5260,12 +5871,12 @@ namespace ActToolkit.EditorTools
 
             EditorGUILayout.ObjectField("Definition", inspectedDefinition, typeof(CombatAnimationDefinition), false);
             EditorGUI.BeginChangeCheck();
-            inspectedDefinition.actionId = EditorGUILayout.TextField("Action Id", inspectedDefinition.actionId);
-            inspectedDefinition.stateName = EditorGUILayout.TextField("State Name", inspectedDefinition.stateName);
+            inspectedDefinition.stateName = EditorGUILayout.TextField("Name", inspectedDefinition.stateName);
             inspectedDefinition.clip = (AnimationClip)EditorGUILayout.ObjectField("Clip", inspectedDefinition.clip, typeof(AnimationClip), false);
             inspectedDefinition.authoringFrameRate = Mathf.Max(1, EditorGUILayout.IntField("Frame Rate", inspectedDefinition.authoringFrameRate));
             if (EditorGUI.EndChangeCheck())
             {
+                inspectedDefinition.EnsureInternalActionId();
                 EditorUtility.SetDirty(inspectedDefinition);
                 RefreshGraphLookupsOnly();
             }
@@ -5281,7 +5892,7 @@ namespace ActToolkit.EditorTools
                     continue;
                 }
 
-                string target = link.targetDefinition != null ? link.targetDefinition.actionId : link.targetActionId;
+                string target = link.targetDefinition != null ? NodeDisplayName(link.targetDefinition) : link.targetActionId;
                 if (GUILayout.Button(ShortLabel(link.inputAction) + " -> " + target + "  " + link.startFrame + "-" + link.endFrame + "f"))
                 {
                     SelectLink(inspectedDefinition, link);
@@ -6601,11 +7212,6 @@ namespace ActToolkit.EditorTools
             if (!string.IsNullOrWhiteSpace(definition.stateName))
             {
                 return definition.stateName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition.actionId))
-            {
-                return definition.actionId;
             }
 
             return string.IsNullOrWhiteSpace(definition.name) ? "Unnamed Action" : definition.name;

@@ -258,7 +258,7 @@ namespace ActToolkit
             if (logCombatEvents)
             {
                 Debug.Log("[CombatActor] Attack buffered until combo window. action="
-                    + currentAction.actionId
+                    + ActionDisplayName(currentAction)
                     + ", input=" + bufferedInputAction
                     + ", frame=" + CurrentActionFrame()
                     + ", buffer=" + attackInputBuffer.ToString("0.00") + "s",
@@ -395,7 +395,7 @@ namespace ActToolkit
 
             if (action.clip == null)
             {
-                Debug.LogWarning("[CombatActor] Action has no clip: " + action.actionId, action);
+                Debug.LogWarning("[CombatActor] Action has no clip: " + ActionDisplayName(action), action);
                 return;
             }
 
@@ -412,7 +412,7 @@ namespace ActToolkit
 
             if (logCombatEvents)
             {
-                Debug.Log("[CombatActor] Start action " + action.actionId, this);
+                Debug.Log("[CombatActor] Start action " + ActionDisplayName(action), this);
             }
 
             LogAnimationDiagnostic("StartAction", BuildActionDiagnostic(action));
@@ -686,7 +686,7 @@ namespace ActToolkit
 
             string boneState = BuildBoneDiagnostic();
             Debug.Log("[CombatActor/AnimDiag] Tick action="
-                + (currentAction == null ? "None" : currentAction.actionId)
+                + ActionDisplayName(currentAction)
                 + ", actionTime=" + currentActionTime.ToString("0.000")
                 + ", clipLength=" + clipLength.ToString("0.000")
                 + ", currentClip=" + (currentClip == null ? "None" : currentClip.name)
@@ -745,12 +745,17 @@ namespace ActToolkit
                 return "action=None";
             }
 
-            return "action=" + action.actionId
+            return "action=" + ActionDisplayName(action)
                 + ", clip=" + ClipName(action.clip)
                 + ", markers=" + (action.markers == null ? 0 : action.markers.Count)
                 + ", links=" + (action.actionLinks == null ? 0 : action.actionLinks.Count)
                 + ", " + BuildAnimatorDiagnostic()
                 + ", " + BuildBoneDiagnostic();
+        }
+
+        private static string ActionDisplayName(CombatAnimationDefinition action)
+        {
+            return action == null ? "None" : action.DisplayName;
         }
 
         private string BuildClipDiagnostic(AnimationClip clipToPlay, bool loop, bool forceRestart, bool sameClip)

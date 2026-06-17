@@ -9,9 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 7d851bce8d0f43a48a1a6d21f6c1e17b, type: 3}
   m_Name: Female_Mannequin_Profile
-  m_EditorClassIdentifier: Assembly-CSharp:ActToolkit:CharacterActionProfile
+  m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CharacterActionProfile
   characterId: character.female.mannequin
   displayName: Female Mannequin
   modelPrefab: {fileID: 919132149155446097, guid: b0a0b783e7f89fd42a4db835e29e8bd0, type: 3}
