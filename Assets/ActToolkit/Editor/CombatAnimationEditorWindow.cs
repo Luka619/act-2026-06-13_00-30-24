@@ -2048,6 +2048,8 @@ namespace ActToolkit.EditorTools
         {
             EditorGUILayout.LabelField("Action Definition", EditorStyles.boldLabel);
 
+            DrawCurrentDefinitionClipField();
+
             EditorGUI.BeginChangeCheck();
             definition.stateName = EditorGUILayout.TextField("Name", definition.stateName);
             definition.authoringFrameRate = Mathf.Max(1, EditorGUILayout.IntField("Authoring FPS", definition.authoringFrameRate));
@@ -2085,6 +2087,26 @@ namespace ActToolkit.EditorTools
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.HelpBox("Select a marker on the timeline or in the marker list to edit its timing, tag, size, and scene gizmo data here.", MessageType.None);
+        }
+
+        private void DrawCurrentDefinitionClipField()
+        {
+            if (definition == null)
+            {
+                return;
+            }
+
+            if (clip == null && definition.clip != null)
+            {
+                clip = definition.clip;
+            }
+
+            EditorGUI.BeginChangeCheck();
+            AnimationClip nextClip = (AnimationClip)EditorGUILayout.ObjectField("Clip", clip, typeof(AnimationClip), false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                AssignClipToCurrentDefinition(nextClip, true);
+            }
         }
 
         private void DrawSelectedMarkerInspector(CombatAnimationMarker marker)
@@ -2788,6 +2810,8 @@ namespace ActToolkit.EditorTools
                 EditorGUILayout.EndVertical();
                 return;
             }
+
+            DrawCurrentDefinitionClipField();
 
             EditorGUI.BeginChangeCheck();
             definition.stateName = EditorGUILayout.TextField("Name", definition.stateName);
@@ -3931,8 +3955,17 @@ namespace ActToolkit.EditorTools
                 return;
             }
 
-            clip = selectedClip;
-            normalizedTime = 0f;
+            AssignClipToCurrentDefinition(selectedClip, true);
+        }
+
+        private void AssignClipToCurrentDefinition(AnimationClip nextClip, bool resetTime)
+        {
+            clip = nextClip;
+            if (resetTime)
+            {
+                normalizedTime = 0f;
+            }
+
             ClearComboPreview();
 
             if (definition != null)
@@ -3941,7 +3974,18 @@ namespace ActToolkit.EditorTools
                 EditorUtility.SetDirty(definition);
             }
 
+            int animationIndex = FindAnimationCandidateIndex(clip);
+            if (animationIndex >= 0)
+            {
+                selectedAnimationIndex = animationIndex;
+            }
+            else if (clip == null)
+            {
+                selectedAnimationIndex = -1;
+            }
+
             SampleClip();
+            Repaint();
         }
 
         private void UseFirstCompatibleAnimationIfNeeded()
@@ -5559,6 +5603,11 @@ namespace ActToolkit.EditorTools
         private const float CanvasHeight = 3200f;
         private const float NodeWidth = 190f;
         private const float NodeHeight = 98f;
+        private const float AutoLayoutEntryX = 40f;
+        private const float AutoLayoutFirstActionX = 300f;
+        private const float AutoLayoutColumnSpacing = 260f;
+        private const float AutoLayoutTop = 84f;
+        private const float AutoLayoutLaneSpacing = 145f;
         private const float NodeContentX = 16f;
         private const float NodeContentWidth = NodeWidth - NodeContentX * 2f;
         private const float ConnectorWidth = 10f;
@@ -6599,6 +6648,7 @@ namespace ActToolkit.EditorTools
             }
 
             RefreshGraphLookupsOnly();
+            ApplyAutoLayoutToUnsavedNodes();
         }
 
         private void RefreshGraphLookupsOnly()
@@ -6661,12 +6711,322 @@ namespace ActToolkit.EditorTools
             return null;
         }
 
+        private void ApplyAutoLayoutToUnsavedNodes()
+        {
+            if (nodes.Count == 0)
+            {
+                return;
+            }
+
+            entryNodeRect.position = new Vector2(AutoLayoutEntryX, AutoLayoutTop);
+
+            Dictionary<GraphNode, int> depths = BuildAutoLayoutDepths();
+            Dictionary<GraphNode, int> lanes = BuildAutoLayoutLanes(depths);
+            List<Rect> occupiedRects = new List<Rect>();
+
+            foreach (GraphNode node in nodes)
+            {
+                if (HasSavedNodePosition(node.definition))
+                {
+                    occupiedRects.Add(node.rect);
+                }
+            }
+
+            List<GraphNode> orderedNodes = new List<GraphNode>(nodes);
+            orderedNodes.Sort((left, right) =>
+            {
+                int leftDepth = GetLayoutDepth(depths, left);
+                int rightDepth = GetLayoutDepth(depths, right);
+                int depthCompare = leftDepth.CompareTo(rightDepth);
+                if (depthCompare != 0)
+                {
+                    return depthCompare;
+                }
+
+                int laneCompare = GetLayoutLane(lanes, left).CompareTo(GetLayoutLane(lanes, right));
+                return laneCompare != 0
+                    ? laneCompare
+                    : string.Compare(NodeTitle(left.definition), NodeTitle(right.definition), StringComparison.OrdinalIgnoreCase);
+            });
+
+            foreach (GraphNode node in orderedNodes)
+            {
+                if (HasSavedNodePosition(node.definition))
+                {
+                    continue;
+                }
+
+                int depth = GetLayoutDepth(depths, node);
+                int lane = Mathf.Max(0, GetLayoutLane(lanes, node));
+                Rect rect = AutoLayoutRect(depth, lane);
+                while (OverlapsAny(rect, occupiedRects))
+                {
+                    lane++;
+                    rect = AutoLayoutRect(depth, lane);
+                }
+
+                node.rect = rect;
+                occupiedRects.Add(rect);
+            }
+        }
+
+        private Dictionary<GraphNode, int> BuildAutoLayoutDepths()
+        {
+            Dictionary<GraphNode, int> depths = new Dictionary<GraphNode, int>();
+            if (database != null)
+            {
+                database.EnsureEntryActions();
+                foreach (CombatActionEntry entry in database.entryActions)
+                {
+                    GraphNode targetNode = ResolveTargetNode(entry == null ? null : entry.targetDefinition, entry == null ? string.Empty : entry.targetActionId);
+                    AssignAutoLayoutDepth(targetNode, 1, depths, new HashSet<GraphNode>());
+                }
+            }
+
+            foreach (GraphNode node in nodes)
+            {
+                if (!depths.ContainsKey(node))
+                {
+                    AssignAutoLayoutDepth(node, 1, depths, new HashSet<GraphNode>());
+                }
+            }
+
+            return depths;
+        }
+
+        private void AssignAutoLayoutDepth(GraphNode node, int depth, Dictionary<GraphNode, int> depths, HashSet<GraphNode> visiting)
+        {
+            if (node == null)
+            {
+                return;
+            }
+
+            int clampedDepth = Mathf.Clamp(depth, 1, Mathf.Max(1, nodes.Count + 1));
+            if (depths.TryGetValue(node, out int existingDepth) && existingDepth >= clampedDepth)
+            {
+                return;
+            }
+
+            depths[node] = clampedDepth;
+            if (!visiting.Add(node))
+            {
+                return;
+            }
+
+            foreach (GraphNode targetNode in ResolveOutgoingTargetNodes(node))
+            {
+                AssignAutoLayoutDepth(targetNode, clampedDepth + 1, depths, visiting);
+            }
+
+            visiting.Remove(node);
+        }
+
+        private Dictionary<GraphNode, int> BuildAutoLayoutLanes(Dictionary<GraphNode, int> depths)
+        {
+            Dictionary<GraphNode, int> lanes = new Dictionary<GraphNode, int>();
+            int nextLane = 0;
+
+            if (database != null)
+            {
+                database.EnsureEntryActions();
+                foreach (CombatActionEntry entry in database.entryActions)
+                {
+                    GraphNode targetNode = ResolveTargetNode(entry == null ? null : entry.targetDefinition, entry == null ? string.Empty : entry.targetActionId);
+                    if (targetNode == null)
+                    {
+                        continue;
+                    }
+
+                    int lane = GetOrAssignLane(targetNode, lanes, ref nextLane);
+                    AssignAutoLayoutLane(targetNode, lane, lanes, new HashSet<GraphNode>(), ref nextLane);
+                }
+            }
+
+            List<GraphNode> orderedNodes = new List<GraphNode>(nodes);
+            orderedNodes.Sort((left, right) =>
+            {
+                int depthCompare = GetLayoutDepth(depths, left).CompareTo(GetLayoutDepth(depths, right));
+                return depthCompare != 0
+                    ? depthCompare
+                    : string.Compare(NodeTitle(left.definition), NodeTitle(right.definition), StringComparison.OrdinalIgnoreCase);
+            });
+
+            foreach (GraphNode node in orderedNodes)
+            {
+                if (lanes.ContainsKey(node))
+                {
+                    continue;
+                }
+
+                int lane = GetOrAssignLane(node, lanes, ref nextLane);
+                AssignAutoLayoutLane(node, lane, lanes, new HashSet<GraphNode>(), ref nextLane);
+            }
+
+            return lanes;
+        }
+
+        private void AssignAutoLayoutLane(GraphNode node, int lane, Dictionary<GraphNode, int> lanes, HashSet<GraphNode> visiting, ref int nextLane)
+        {
+            if (node == null || !visiting.Add(node))
+            {
+                return;
+            }
+
+            List<GraphNode> targets = ResolveOutgoingTargetNodes(node);
+            for (int i = 0; i < targets.Count; i++)
+            {
+                GraphNode targetNode = targets[i];
+                int childLane = i == 0 ? lane : nextLane++;
+                if (!lanes.ContainsKey(targetNode))
+                {
+                    lanes[targetNode] = childLane;
+                }
+
+                AssignAutoLayoutLane(targetNode, lanes[targetNode], lanes, visiting, ref nextLane);
+            }
+
+            visiting.Remove(node);
+        }
+
+        private List<GraphNode> ResolveOutgoingTargetNodes(GraphNode sourceNode)
+        {
+            List<GraphNode> targetNodes = new List<GraphNode>();
+            CombatAnimationDefinition source = sourceNode == null ? null : sourceNode.definition;
+            if (source == null)
+            {
+                return targetNodes;
+            }
+
+            source.EnsureActionLinks();
+            List<CombatActionLink> links = new List<CombatActionLink>();
+            foreach (CombatActionLink link in source.actionLinks)
+            {
+                if (link != null)
+                {
+                    links.Add(link);
+                }
+            }
+
+            links.Sort(CompareActionLinksForLayout);
+            foreach (CombatActionLink link in links)
+            {
+                GraphNode targetNode = ResolveTargetNode(link.targetDefinition, link.targetActionId);
+                if (targetNode != null && !targetNodes.Contains(targetNode))
+                {
+                    targetNodes.Add(targetNode);
+                }
+            }
+
+            return targetNodes;
+        }
+
+        private static int CompareActionLinksForLayout(CombatActionLink left, CombatActionLink right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left == null)
+            {
+                return 1;
+            }
+
+            if (right == null)
+            {
+                return -1;
+            }
+
+            int startCompare = left.startFrame.CompareTo(right.startFrame);
+            if (startCompare != 0)
+            {
+                return startCompare;
+            }
+
+            int endCompare = left.endFrame.CompareTo(right.endFrame);
+            if (endCompare != 0)
+            {
+                return endCompare;
+            }
+
+            int inputCompare = string.Compare(left.inputAction, right.inputAction, StringComparison.OrdinalIgnoreCase);
+            if (inputCompare != 0)
+            {
+                return inputCompare;
+            }
+
+            string leftTargetName = left.targetDefinition == null ? left.targetActionId : NodeTitle(left.targetDefinition);
+            string rightTargetName = right.targetDefinition == null ? right.targetActionId : NodeTitle(right.targetDefinition);
+            return string.Compare(leftTargetName, rightTargetName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int GetOrAssignLane(GraphNode node, Dictionary<GraphNode, int> lanes, ref int nextLane)
+        {
+            if (node == null)
+            {
+                return nextLane;
+            }
+
+            if (lanes.TryGetValue(node, out int lane))
+            {
+                return lane;
+            }
+
+            lane = nextLane++;
+            lanes[node] = lane;
+            return lane;
+        }
+
+        private static int GetLayoutDepth(Dictionary<GraphNode, int> depths, GraphNode node)
+        {
+            return node != null && depths.TryGetValue(node, out int depth) ? depth : 1;
+        }
+
+        private static int GetLayoutLane(Dictionary<GraphNode, int> lanes, GraphNode node)
+        {
+            return node != null && lanes.TryGetValue(node, out int lane) ? lane : 0;
+        }
+
+        private static Rect AutoLayoutRect(int depth, int lane)
+        {
+            return new Rect(
+                AutoLayoutFirstActionX + (Mathf.Max(1, depth) - 1) * AutoLayoutColumnSpacing,
+                AutoLayoutTop + Mathf.Max(0, lane) * AutoLayoutLaneSpacing,
+                NodeWidth,
+                NodeHeight);
+        }
+
+        private static bool OverlapsAny(Rect rect, List<Rect> occupiedRects)
+        {
+            Rect paddedRect = ExpandRect(rect, 10f);
+            foreach (Rect occupiedRect in occupiedRects)
+            {
+                if (paddedRect.Overlaps(ExpandRect(occupiedRect, 10f)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static Rect LoadNodeRect(CombatAnimationDefinition definition, int index)
         {
             string key = NodePrefsKey(definition);
             float x = EditorPrefs.GetFloat(key + ".x", 300f + index % 5 * 250f);
             float y = EditorPrefs.GetFloat(key + ".y", 80f + index / 5 * 140f);
             return new Rect(x, y, NodeWidth, NodeHeight);
+        }
+
+        private static bool HasSavedNodePosition(CombatAnimationDefinition definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
+            string key = NodePrefsKey(definition);
+            return EditorPrefs.HasKey(key + ".x") && EditorPrefs.HasKey(key + ".y");
         }
 
         private static void SaveNodePosition(GraphNode node)
