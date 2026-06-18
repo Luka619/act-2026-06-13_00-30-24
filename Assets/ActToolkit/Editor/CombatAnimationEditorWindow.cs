@@ -5727,6 +5727,15 @@ namespace ActToolkit.EditorTools
                 RefreshGraph();
             }
 
+            using (new EditorGUI.DisabledScope(database == null || nodes.Count == 0))
+            {
+                if (GUILayout.Button(new GUIContent("Auto Layout", "Arrange the combo graph from entry moves and save the node positions."), EditorStyles.toolbarButton, GUILayout.Width(88f)))
+                {
+                    ApplyAutoLayoutToAllNodes();
+                    RequestRepaint();
+                }
+            }
+
             GUILayout.Space(10f);
             GUILayout.Label("New Link Input", GUILayout.Width(92f));
             selectedInputAction = DrawInputActionComposer(selectedInputAction, true);
@@ -6713,8 +6722,20 @@ namespace ActToolkit.EditorTools
 
         private void ApplyAutoLayoutToUnsavedNodes()
         {
+            ApplyAutoLayout(false, false);
+        }
+
+        private void ApplyAutoLayoutToAllNodes()
+        {
+            ApplyAutoLayout(true, true);
+        }
+
+        private void ApplyAutoLayout(bool overwriteSavedPositions, bool savePositions)
+        {
             if (nodes.Count == 0)
             {
+                entryNodeRect.position = new Vector2(AutoLayoutEntryX, AutoLayoutTop);
+                graphScroll = Vector2.zero;
                 return;
             }
 
@@ -6726,7 +6747,7 @@ namespace ActToolkit.EditorTools
 
             foreach (GraphNode node in nodes)
             {
-                if (HasSavedNodePosition(node.definition))
+                if (!overwriteSavedPositions && HasSavedNodePosition(node.definition))
                 {
                     occupiedRects.Add(node.rect);
                 }
@@ -6751,7 +6772,7 @@ namespace ActToolkit.EditorTools
 
             foreach (GraphNode node in orderedNodes)
             {
-                if (HasSavedNodePosition(node.definition))
+                if (!overwriteSavedPositions && HasSavedNodePosition(node.definition))
                 {
                     continue;
                 }
@@ -6766,8 +6787,15 @@ namespace ActToolkit.EditorTools
                 }
 
                 node.rect = rect;
+                if (savePositions)
+                {
+                    SaveNodePosition(node);
+                }
+
                 occupiedRects.Add(rect);
             }
+
+            graphScroll = ClampGraphScroll(new Vector2(0f, Mathf.Max(0f, AutoLayoutTop - 24f)), graphViewportSize);
         }
 
         private Dictionary<GraphNode, int> BuildAutoLayoutDepths()

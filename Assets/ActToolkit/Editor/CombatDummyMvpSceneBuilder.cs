@@ -3,6 +3,7 @@ using ActToolkit;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace ActToolkit.EditorTools
@@ -51,8 +52,10 @@ namespace ActToolkit.EditorTools
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             scene.name = "CombatDummyMvp";
 
-            Material groundMaterial = CreateMaterial(MvpFolder + "/M_Mvp_Ground.mat", new Color(0.22f, 0.26f, 0.28f, 1f));
-            Material dummyMaterial = CreateMaterial(MvpFolder + "/M_Mvp_Dummy.mat", new Color(0.72f, 0.52f, 0.32f, 1f));
+            ConfigureNeutralTestLighting();
+
+            Material groundMaterial = CreateMaterial(MvpFolder + "/M_Mvp_Ground.mat", new Color(0.16f, 0.18f, 0.2f, 1f));
+            Material dummyMaterial = CreateMaterial(MvpFolder + "/M_Mvp_Dummy.mat", new Color(0.58f, 0.42f, 0.28f, 1f));
 
             CreateGround(groundMaterial);
             Camera camera = CreateCamera();
@@ -449,6 +452,9 @@ namespace ActToolkit.EditorTools
             camera.fieldOfView = 52f;
             camera.nearClipPlane = 0.05f;
             camera.farClipPlane = 100f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.12f, 0.14f, 0.16f, 1f);
+            camera.allowHDR = false;
             return camera;
         }
 
@@ -458,7 +464,19 @@ namespace ActToolkit.EditorTools
             lightObject.transform.rotation = Quaternion.Euler(50f, -35f, 0f);
             Light light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.15f;
+            light.color = new Color(1f, 0.96f, 0.9f, 1f);
+            light.intensity = 0.45f;
+            light.shadowStrength = 0.55f;
+        }
+
+        private static void ConfigureNeutralTestLighting()
+        {
+            RenderSettings.skybox = null;
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.26f, 0.28f, 0.3f, 1f);
+            RenderSettings.ambientIntensity = 0.65f;
+            RenderSettings.reflectionIntensity = 0.2f;
+            RenderSettings.flareStrength = 0.25f;
         }
 
         private static GameObject CreatePlayer(CharacterActionProfile characterProfile, Camera camera)
@@ -645,6 +663,8 @@ namespace ActToolkit.EditorTools
             Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material != null)
             {
+                ConfigureMaterial(material, color);
+                EditorUtility.SetDirty(material);
                 return material;
             }
 
@@ -656,9 +676,38 @@ namespace ActToolkit.EditorTools
 
             material = new Material(shader);
             material.name = System.IO.Path.GetFileNameWithoutExtension(path);
-            material.color = color;
+            ConfigureMaterial(material, color);
             AssetDatabase.CreateAsset(material, path);
             return material;
+        }
+
+        private static void ConfigureMaterial(Material material, Color color)
+        {
+            material.color = color;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", color);
+            }
+
+            if (material.HasProperty("_Smoothness"))
+            {
+                material.SetFloat("_Smoothness", 0.2f);
+            }
+
+            if (material.HasProperty("_SpecularHighlights"))
+            {
+                material.SetFloat("_SpecularHighlights", 0f);
+            }
+
+            if (material.HasProperty("_EnvironmentReflections"))
+            {
+                material.SetFloat("_EnvironmentReflections", 0f);
+            }
         }
 
         private static void ApplyMaterial(GameObject target, Material material)
