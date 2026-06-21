@@ -13,11 +13,6 @@ MonoBehaviour:
   m_Name: Female_Mannequin_ComboTable
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatActionDatabase
   entryActions:
-  - id: a2ee41d93cda48f88fba65891da6ff66
-    inputAction: Attack.Light
-    targetDefinition: {fileID: 11400000, guid: 8b44d902343ae5b4993331ed641344da, type: 2}
-    targetActionId: action.light_1
-    serverAuthoritative: 1
   - id: 42d21ce1d1d34542bf4d0753a3c210bb
     inputAction: Attack.Heavy
     targetDefinition: {fileID: 11400000, guid: b233f5489c604f269d90dcdad917a4d8, type: 2}
@@ -43,13 +38,17 @@ MonoBehaviour:
     targetDefinition: {fileID: 11400000, guid: a9bed2158b124cba9d5847a91d0ab4ff, type: 2}
     targetActionId: action.throw
     serverAuthoritative: 1
+  - id: 7a777cce94fa46c5951bbe927ae55eb7
+    inputAction: Attack.Light
+    targetDefinition: {fileID: 11400000, guid: 0d8e0fbcb71db364c8b94940ff4b927d, type: 2}
+    targetActionId: action.misc.sword_regular_b
+    serverAuthoritative: 1
   actions:
-  - {fileID: 11400000, guid: 8b44d902343ae5b4993331ed641344da, type: 2}
-  - {fileID: 11400000, guid: 92b09df5592b9df409da3fb7fd2cb181, type: 2}
   - {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
+  - {fileID: 11400000, guid: 8b44d902343ae5b4993331ed641344da, type: 2}
   - {fileID: 11400000, guid: b233f5489c604f269d90dcdad917a4d8, type: 2}
   - {fileID: 11400000, guid: 377684f394f84d81bc737803377f6c80, type: 2}
-  - {fileID: 11400000, guid: 017a72bf33424bd29d3d93e6c64c31c2, type: 2}
   - {fileID: 11400000, guid: 631b96c46f234d61a8374f1738be3c5e, type: 2}
   - {fileID: 11400000, guid: 56f08e15b09840c5b4241f44803ac60c, type: 2}
   - {fileID: 11400000, guid: a9bed2158b124cba9d5847a91d0ab4ff, type: 2}
+  - {fileID: 11400000, guid: 0d8e0fbcb71db364c8b94940ff4b927d, type: 2}

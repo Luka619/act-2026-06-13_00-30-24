@@ -40,6 +40,9 @@ namespace ActToolkit
         private AnimationClip idleClip;
 
         [SerializeField]
+        private AnimationClip walkClip;
+
+        [SerializeField]
         private AnimationClip moveClip;
 
         [Header("Movement")]
@@ -52,12 +55,42 @@ namespace ActToolkit
         [SerializeField]
         private float gravity = -18f;
 
+        [SerializeField, Range(0f, 0.35f)]
+        private float locomotionDeadZone = 0.12f;
+
+        [SerializeField, Range(1f, 20f)]
+        private float locomotionBlendSpeed = 8f;
+
+        [SerializeField, Range(0.2f, 0.85f)]
+        private float locomotionWalkBlendPoint = 0.24f;
+
+        [SerializeField, Min(0.01f)]
+        private float locomotionWalkReferenceSpeed = 0.925f;
+
+        [SerializeField, Min(0.01f)]
+        private float locomotionMoveReferenceSpeed = 5.309f;
+
+        [SerializeField, Range(0.1f, 3f)]
+        private float locomotionPlaybackSpeedMin = 0.35f;
+
+        [SerializeField, Range(0.1f, 3f)]
+        private float locomotionPlaybackSpeedMax = 3f;
+
+        [SerializeField, Range(0f, 0.35f)]
+        private float actionToLocomotionBlendDuration = 0.14f;
+
         [Header("Hit Detection")]
         [SerializeField]
         private LayerMask hurtboxLayers = ~0;
 
         [SerializeField]
         private int defaultDamage = 10;
+
+        [SerializeField]
+        private bool drawHitboxDebug = true;
+
+        [SerializeField, Range(0.02f, 1f)]
+        private float hitboxDebugLinger = 0.18f;
 
         [SerializeField]
         private bool logCombatEvents = true;
@@ -70,12 +103,23 @@ namespace ActToolkit
 
         private readonly HashSet<HitRecord> hitRecords = new HashSet<HitRecord>();
         private readonly List<CombatAnimationMarker> activeHitboxes = new List<CombatAnimationMarker>();
+        private readonly List<HitboxDebugSample> hitboxDebugSamples = new List<HitboxDebugSample>();
 
         private PlayableGraph graph;
         private AnimationPlayableOutput output;
         private AnimationClipPlayable currentPlayable;
+        private AnimationMixerPlayable locomotionMixer;
+        private AnimationClipPlayable idlePlayable;
+        private AnimationClipPlayable walkPlayable;
+        private AnimationClipPlayable movePlayable;
+        private AnimationMixerPlayable returnTransitionMixer;
         private AnimationClip currentClip;
         private bool currentClipLoops;
+        private float locomotionBlendWeight;
+        private float returnTransitionTime;
+        private double idleLocomotionTime;
+        private double walkLocomotionTime;
+        private double moveLocomotionTime;
 
         private CombatAnimationDefinition currentAction;
         private float currentActionTime;
@@ -162,11 +206,39 @@ namespace ActToolkit
                 idleClip = characterProfile.idleClip;
             }
 
+            if (characterProfile.walkClip != null)
+            {
+                walkClip = characterProfile.walkClip;
+            }
+
             if (characterProfile.moveClip != null)
             {
                 moveClip = characterProfile.moveClip;
             }
+
+#if UNITY_EDITOR
+            if (walkClip == null)
+            {
+                walkClip = LoadEditorDefaultClip("Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary_Standard/UAL1_Standard.fbx", "Armature|Walk_Loop");
+            }
+#endif
         }
+
+#if UNITY_EDITOR
+        private static AnimationClip LoadEditorDefaultClip(string assetPath, string clipName)
+        {
+            UnityEngine.Object[] assets = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(assetPath);
+            for (int i = 0; i < assets.Length; i++)
+            {
+                if (assets[i] is AnimationClip clip && clip.name == clipName)
+                {
+                    return clip;
+                }
+            }
+
+            return null;
+        }
+#endif
 
         private void EnsureProfileModelInstance()
         {
@@ -185,7 +257,7 @@ namespace ActToolkit
         private void OnEnable()
         {
             EnsureGraph();
-            PlayLocomotionClip(true);
+            PlayLocomotionClip(true, 0f);
         }
 
         private void OnDisable()
@@ -196,6 +268,18 @@ namespace ActToolkit
             }
 
             graphReady = false;
+            currentPlayable = default;
+            locomotionMixer = default;
+            idlePlayable = default;
+            walkPlayable = default;
+            movePlayable = default;
+            returnTransitionMixer = default;
+            currentClip = null;
+            locomotionBlendWeight = 0f;
+            returnTransitionTime = 0f;
+            idleLocomotionTime = 0d;
+            walkLocomotionTime = 0d;
+            moveLocomotionTime = 0d;
         }
 
         private void Update()
@@ -213,9 +297,9 @@ namespace ActToolkit
                 return;
             }
 
-            if (animator.avatar == null)
+            if (animator.avatar == null && AnyAssignedClipRequiresAvatar())
             {
-                Debug.LogWarning("[CombatActor] Animator has no Avatar. Animation clips may not move the model.", this);
+                Debug.LogWarning("[CombatActor] Animator has no Avatar, but at least one assigned clip uses humanoid motion. Humanoid clips may not move the model.", this);
             }
 
             graph = PlayableGraph.Create(name + "_CombatGraph");
@@ -225,6 +309,34 @@ namespace ActToolkit
             graphReady = true;
 
             LogAnimationDiagnostic("GraphReady", BuildGraphDiagnostic());
+        }
+
+        private bool AnyAssignedClipRequiresAvatar()
+        {
+            if (ClipRequiresAvatar(idleClip) || ClipRequiresAvatar(walkClip) || ClipRequiresAvatar(moveClip))
+            {
+                return true;
+            }
+
+            if (actionDatabase == null || actionDatabase.actions == null)
+            {
+                return false;
+            }
+
+            foreach (CombatAnimationDefinition action in actionDatabase.actions)
+            {
+                if (action != null && ClipRequiresAvatar(action.clip))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ClipRequiresAvatar(AnimationClip clip)
+        {
+            return clip != null && clip.humanMotion;
         }
 
         private void HandleAttackInput()
@@ -287,7 +399,7 @@ namespace ActToolkit
                 return;
             }
 
-            Vector2 moveInput = IsMovementLocked ? Vector2.zero : input.Move;
+            Vector2 moveInput = IsMovementLocked ? Vector2.zero : EffectiveMoveInput(input.Move);
             Vector3 move = CameraRelativeMove(moveInput);
 
             if (move.sqrMagnitude > 0.0001f)
@@ -337,13 +449,26 @@ namespace ActToolkit
             return move.sqrMagnitude > 1f ? move.normalized : move;
         }
 
+        private Vector2 EffectiveMoveInput(Vector2 rawInput)
+        {
+            float magnitude = Mathf.Clamp01(rawInput.magnitude);
+            if (magnitude <= locomotionDeadZone)
+            {
+                return Vector2.zero;
+            }
+
+            float effectiveMagnitude = Mathf.InverseLerp(locomotionDeadZone, 1f, magnitude);
+            return rawInput.normalized * effectiveMagnitude;
+        }
+
         private void UpdateAnimationAndCombat(float deltaTime)
         {
             activeHitboxes.Clear();
+            PruneHitboxDebugSamples();
 
             if (currentAction == null)
             {
-                PlayLocomotionClip(false);
+                PlayLocomotionClip(false, deltaTime);
                 return;
             }
 
@@ -353,24 +478,243 @@ namespace ActToolkit
             TryQueueBufferedCombo("buffer");
             LogPlaybackTickDiagnostic(clipLength);
 
+            if (ShouldReturnToLocomotionFromAction(clipLength))
+            {
+                if (logCombatEvents)
+                {
+                    Debug.Log("[CombatActor] Return to locomotion from action "
+                        + ActionDisplayName(currentAction)
+                        + ", frame=" + CurrentActionFrame(),
+                        this);
+                }
+
+                FinishCurrentAction();
+                return;
+            }
+
             if (clipLength <= 0f || currentActionTime >= clipLength)
             {
                 FinishCurrentAction();
             }
         }
 
-        private void PlayLocomotionClip(bool force)
+        private void PlayLocomotionClip(bool force, float deltaTime)
         {
-            AnimationClip targetClip = idleClip;
-            if (input != null && input.Move.sqrMagnitude > 0.05f && moveClip != null)
+            if (!graphReady || (idleClip == null && walkClip == null && moveClip == null))
             {
-                targetClip = moveClip;
+                return;
             }
 
-            if (targetClip != null)
+            if (returnTransitionMixer.IsValid())
             {
-                PlayClip(targetClip, true, force);
+                UpdateReturnToLocomotionTransition(deltaTime);
+                return;
             }
+
+            if (currentPlayable.IsValid())
+            {
+                graph.DestroyPlayable(currentPlayable);
+                currentPlayable = default;
+            }
+
+            EnsureLocomotionMixer(force);
+            UpdateLocomotionBlend(force, deltaTime);
+        }
+
+        private void UpdateLocomotionBlend(bool force, float deltaTime)
+        {
+            Vector2 effectiveMove = input == null ? Vector2.zero : EffectiveMoveInput(input.Move);
+            float targetWeight = Mathf.Clamp01(effectiveMove.magnitude);
+
+            locomotionBlendWeight = force
+                ? targetWeight
+                : Mathf.MoveTowards(locomotionBlendWeight, targetWeight, Mathf.Max(0.01f, locomotionBlendSpeed) * deltaTime);
+
+            ComputeLocomotionWeights(locomotionBlendWeight, out float idleWeight, out float walkWeight, out float moveWeight);
+            float playbackSpeed = ApplyLocomotionPlaybackSpeed(locomotionBlendWeight, walkWeight, moveWeight);
+
+            if (idlePlayable.IsValid())
+            {
+                locomotionMixer.SetInputWeight(0, idleWeight);
+            }
+
+            if (walkPlayable.IsValid())
+            {
+                locomotionMixer.SetInputWeight(1, walkWeight);
+            }
+
+            if (movePlayable.IsValid())
+            {
+                locomotionMixer.SetInputWeight(2, moveWeight);
+            }
+
+            UpdateLocomotionPlayableTimes(deltaTime, playbackSpeed);
+
+            currentClip = SelectDominantLocomotionClip(idleWeight, walkWeight, moveWeight);
+            currentClipLoops = true;
+        }
+
+        private void ComputeLocomotionWeights(float blendValue, out float idleWeight, out float walkWeight, out float moveWeight)
+        {
+            float value = Mathf.Clamp01(blendValue);
+            float walkPeak = Mathf.Clamp(locomotionWalkBlendPoint, 0.01f, 0.99f);
+
+            if (walkClip == null)
+            {
+                idleWeight = idleClip == null ? 0f : 1f - value;
+                walkWeight = 0f;
+                moveWeight = moveClip == null ? 0f : value;
+                NormalizeLocomotionWeights(ref idleWeight, ref walkWeight, ref moveWeight);
+                return;
+            }
+
+            if (moveClip == null)
+            {
+                idleWeight = idleClip == null ? 0f : 1f - value;
+                walkWeight = value;
+                moveWeight = 0f;
+                NormalizeLocomotionWeights(ref idleWeight, ref walkWeight, ref moveWeight);
+                return;
+            }
+
+            if (value <= walkPeak)
+            {
+                float t = value / walkPeak;
+                idleWeight = idleClip == null ? 0f : 1f - t;
+                walkWeight = t;
+                moveWeight = 0f;
+            }
+            else
+            {
+                float t = Mathf.InverseLerp(walkPeak, 1f, value);
+                idleWeight = 0f;
+                walkWeight = 1f - t;
+                moveWeight = t;
+            }
+
+            NormalizeLocomotionWeights(ref idleWeight, ref walkWeight, ref moveWeight);
+        }
+
+        private float ApplyLocomotionPlaybackSpeed(float effectiveMoveMagnitude, float walkWeight, float moveWeight)
+        {
+            if (idlePlayable.IsValid())
+            {
+                idlePlayable.SetSpeed(0d);
+            }
+
+            float desiredSpeed = Mathf.Max(0f, moveSpeed) * Mathf.Clamp01(effectiveMoveMagnitude);
+            float authoredSpeed = walkWeight * Mathf.Max(0.01f, locomotionWalkReferenceSpeed)
+                + moveWeight * Mathf.Max(0.01f, locomotionMoveReferenceSpeed);
+            float playbackSpeed = authoredSpeed <= 0.001f
+                ? 1f
+                : desiredSpeed / authoredSpeed;
+
+            float minSpeed = Mathf.Min(locomotionPlaybackSpeedMin, locomotionPlaybackSpeedMax);
+            float maxSpeed = Mathf.Max(locomotionPlaybackSpeedMin, locomotionPlaybackSpeedMax);
+            playbackSpeed = Mathf.Clamp(playbackSpeed, minSpeed, maxSpeed);
+
+            if (walkPlayable.IsValid())
+            {
+                walkPlayable.SetSpeed(0d);
+            }
+
+            if (movePlayable.IsValid())
+            {
+                movePlayable.SetSpeed(0d);
+            }
+
+            return playbackSpeed;
+        }
+
+        private static void NormalizeLocomotionWeights(ref float idleWeight, ref float walkWeight, ref float moveWeight)
+        {
+            float total = idleWeight + walkWeight + moveWeight;
+            if (total > 0.0001f)
+            {
+                idleWeight /= total;
+                walkWeight /= total;
+                moveWeight /= total;
+            }
+        }
+
+        private AnimationClip SelectDominantLocomotionClip(float idleWeight, float walkWeight, float moveWeight)
+        {
+            if (moveClip != null && moveWeight >= walkWeight && moveWeight >= idleWeight)
+            {
+                return moveClip;
+            }
+
+            if (walkClip != null && walkWeight >= idleWeight)
+            {
+                return walkClip;
+            }
+
+            return idleClip != null ? idleClip : walkClip != null ? walkClip : moveClip;
+        }
+
+        private void EnsureLocomotionMixer(bool forceRestart)
+        {
+            if (locomotionMixer.IsValid())
+            {
+                if (forceRestart)
+                {
+                    ResetLocomotionTimes();
+                }
+
+                return;
+            }
+
+            if (forceRestart)
+            {
+                ResetLocomotionTimes();
+            }
+
+            locomotionMixer = AnimationMixerPlayable.Create(graph, 3);
+
+            if (idleClip != null)
+            {
+                idlePlayable = AnimationClipPlayable.Create(graph, idleClip);
+                ConfigureClipPlayable(idlePlayable, true);
+                if (forceRestart)
+                {
+                    idlePlayable.SetTime(idleLocomotionTime);
+                    idlePlayable.SetDone(false);
+                }
+
+                graph.Connect(idlePlayable, 0, locomotionMixer, 0);
+            }
+
+            if (walkClip != null)
+            {
+                walkPlayable = AnimationClipPlayable.Create(graph, walkClip);
+                ConfigureClipPlayable(walkPlayable, true);
+                if (forceRestart)
+                {
+                    walkPlayable.SetTime(walkLocomotionTime);
+                    walkPlayable.SetDone(false);
+                }
+
+                graph.Connect(walkPlayable, 0, locomotionMixer, 1);
+            }
+
+            if (moveClip != null)
+            {
+                movePlayable = AnimationClipPlayable.Create(graph, moveClip);
+                ConfigureClipPlayable(movePlayable, true);
+                if (forceRestart)
+                {
+                    movePlayable.SetTime(moveLocomotionTime);
+                    movePlayable.SetDone(false);
+                }
+
+                graph.Connect(movePlayable, 0, locomotionMixer, 2);
+            }
+
+            output.SetSourcePlayable(locomotionMixer);
+            LogAnimationDiagnostic("LocomotionMixer", "idleClip=" + ClipName(idleClip)
+                + ", walkClip=" + ClipName(walkClip)
+                + ", moveClip=" + ClipName(moveClip)
+                + ", blend=" + locomotionBlendWeight.ToString("0.00"));
         }
 
         private void StartAction(string actionId)
@@ -436,12 +780,112 @@ namespace ActToolkit
                 return;
             }
 
-            PlayLocomotionClip(true);
+            BeginReturnToLocomotionTransition();
 
             if (logCombatEvents && !string.IsNullOrWhiteSpace(finishedAction))
             {
                 Debug.Log("[CombatActor] Finish action " + finishedAction, this);
             }
+        }
+
+        private void BeginReturnToLocomotionTransition()
+        {
+            if (!graphReady || !currentPlayable.IsValid() || actionToLocomotionBlendDuration <= 0f)
+            {
+                PlayLocomotionClip(true, 0f);
+                return;
+            }
+
+            EnsureLocomotionMixer(true);
+            UpdateLocomotionBlend(true, 0f);
+            currentPlayable.SetSpeed(0d);
+            currentPlayable.SetDone(false);
+
+            returnTransitionMixer = AnimationMixerPlayable.Create(graph, 2);
+            graph.Connect(currentPlayable, 0, returnTransitionMixer, 0);
+            graph.Connect(locomotionMixer, 0, returnTransitionMixer, 1);
+            returnTransitionMixer.SetInputWeight(0, 1f);
+            returnTransitionMixer.SetInputWeight(1, 0f);
+            returnTransitionTime = 0f;
+            output.SetSourcePlayable(returnTransitionMixer);
+
+            LogAnimationDiagnostic("ReturnToLocomotion", "duration=" + actionToLocomotionBlendDuration.ToString("0.00")
+                + ", targetClip=" + ClipName(currentClip));
+        }
+
+        private void UpdateReturnToLocomotionTransition(float deltaTime)
+        {
+            if (!returnTransitionMixer.IsValid())
+            {
+                return;
+            }
+
+            EnsureLocomotionMixer(false);
+            UpdateLocomotionBlend(false, deltaTime);
+
+            returnTransitionTime += Mathf.Max(0f, deltaTime);
+            float linear = actionToLocomotionBlendDuration <= 0f
+                ? 1f
+                : Mathf.Clamp01(returnTransitionTime / actionToLocomotionBlendDuration);
+            float eased = Mathf.SmoothStep(0f, 1f, linear);
+            returnTransitionMixer.SetInputWeight(0, 1f - eased);
+            returnTransitionMixer.SetInputWeight(1, eased);
+
+            if (linear >= 1f)
+            {
+                CompleteReturnToLocomotionTransition();
+            }
+        }
+
+        private void CompleteReturnToLocomotionTransition()
+        {
+            DestroyReturnTransition(true);
+            if (locomotionMixer.IsValid())
+            {
+                output.SetSourcePlayable(locomotionMixer);
+            }
+        }
+
+        private bool ShouldReturnToLocomotionFromAction(float clipLength)
+        {
+            if (currentAction == null
+                || clipLength <= 0f
+                || !string.IsNullOrWhiteSpace(queuedActionId)
+                || HasOutgoingActionLinks(currentAction)
+                || input == null
+                || EffectiveMoveInput(input.Move).sqrMagnitude <= 0.0001f)
+            {
+                return false;
+            }
+
+            return !HasActiveMarker(CombatAnimationEventKind.MovementLock)
+                && !HasActiveMarker(CombatAnimationEventKind.Hitbox)
+                && !HasActiveMarker(CombatAnimationEventKind.ComboBranch)
+                && !HasActiveMarker(CombatAnimationEventKind.Invulnerability)
+                && !HasActiveMarker(CombatAnimationEventKind.SuperArmor);
+        }
+
+        private static bool HasOutgoingActionLinks(CombatAnimationDefinition action)
+        {
+            if (action == null || action.actionLinks == null)
+            {
+                return false;
+            }
+
+            foreach (CombatActionLink link in action.actionLinks)
+            {
+                if (link == null)
+                {
+                    continue;
+                }
+
+                if (link.targetDefinition != null || !string.IsNullOrWhiteSpace(link.targetActionId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void ProcessActiveMarkers()
@@ -474,6 +918,8 @@ namespace ActToolkit
                 Mathf.Max(0.01f, marker.size.x * 0.5f),
                 Mathf.Max(0.01f, marker.size.y * 0.5f),
                 Mathf.Max(0.01f, marker.size.z * 0.5f));
+
+            AddHitboxDebugSample(marker, center, halfExtents * 2f, transform.rotation);
 
             Collider[] hits = Physics.OverlapBox(center, halfExtents, transform.rotation, hurtboxLayers, QueryTriggerInteraction.Collide);
             foreach (Collider hit in hits)
@@ -523,6 +969,35 @@ namespace ActToolkit
             }
 
             return defaultDamage;
+        }
+
+        private void AddHitboxDebugSample(CombatAnimationMarker marker, Vector3 center, Vector3 size, Quaternion rotation)
+        {
+            if (!drawHitboxDebug || marker == null)
+            {
+                return;
+            }
+
+            PruneHitboxDebugSamples();
+            hitboxDebugSamples.Add(new HitboxDebugSample
+            {
+                center = center,
+                size = size,
+                rotation = rotation,
+                color = marker.color,
+                expiresAt = Time.time + Mathf.Max(0.02f, hitboxDebugLinger)
+            });
+        }
+
+        private void PruneHitboxDebugSamples()
+        {
+            for (int i = hitboxDebugSamples.Count - 1; i >= 0; i--)
+            {
+                if (Time.time >= hitboxDebugSamples[i].expiresAt)
+                {
+                    hitboxDebugSamples.RemoveAt(i);
+                }
+            }
         }
 
         private bool TryGetComboTarget(string inputAction, out string targetActionId)
@@ -646,6 +1121,9 @@ namespace ActToolkit
                 return;
             }
 
+            DestroyReturnTransition(true);
+            DestroyLocomotionMixer();
+
             bool sameClip = currentClip == clipToPlay && currentPlayable.IsValid();
             if (!sameClip)
             {
@@ -655,8 +1133,7 @@ namespace ActToolkit
                 }
 
                 currentPlayable = AnimationClipPlayable.Create(graph, clipToPlay);
-                currentPlayable.SetApplyFootIK(true);
-                currentPlayable.SetSpeed(1d);
+                ConfigureClipPlayable(currentPlayable, loop);
                 output.SetSourcePlayable(currentPlayable);
                 currentClip = clipToPlay;
             }
@@ -669,6 +1146,122 @@ namespace ActToolkit
             }
 
             LogAnimationDiagnostic("PlayClip", BuildClipDiagnostic(clipToPlay, loop, forceRestart, sameClip));
+        }
+
+        private void DestroyReturnTransition(bool destroyActionPlayable)
+        {
+            bool hadTransition = returnTransitionMixer.IsValid();
+            if (returnTransitionMixer.IsValid())
+            {
+                returnTransitionMixer.DisconnectInput(0);
+                returnTransitionMixer.DisconnectInput(1);
+                graph.DestroyPlayable(returnTransitionMixer);
+                returnTransitionMixer = default;
+            }
+
+            if (hadTransition && destroyActionPlayable && currentPlayable.IsValid())
+            {
+                graph.DestroyPlayable(currentPlayable);
+                currentPlayable = default;
+            }
+
+            returnTransitionTime = 0f;
+        }
+
+        private static void ConfigureClipPlayable(AnimationClipPlayable playable, bool loop)
+        {
+            playable.SetApplyFootIK(true);
+            if (loop)
+            {
+                playable.SetDuration(double.PositiveInfinity);
+                playable.SetSpeed(0d);
+                return;
+            }
+
+            playable.SetSpeed(1d);
+        }
+
+        private void UpdateLocomotionPlayableTimes(float deltaTime, float playbackSpeed)
+        {
+            float safeDeltaTime = Mathf.Max(0f, deltaTime);
+            float safePlaybackSpeed = Mathf.Max(0f, playbackSpeed);
+
+            AdvanceLoopingPlayable(idlePlayable, idleClip, ref idleLocomotionTime, safeDeltaTime, 1f);
+            AdvanceLoopingPlayable(walkPlayable, walkClip, ref walkLocomotionTime, safeDeltaTime, safePlaybackSpeed);
+            AdvanceLoopingPlayable(movePlayable, moveClip, ref moveLocomotionTime, safeDeltaTime, safePlaybackSpeed);
+        }
+
+        private static void AdvanceLoopingPlayable(
+            AnimationClipPlayable playable,
+            AnimationClip clip,
+            ref double localTime,
+            float deltaTime,
+            float playbackSpeed)
+        {
+            if (!playable.IsValid() || clip == null || clip.length <= 0f)
+            {
+                return;
+            }
+
+            double length = clip.length;
+            if (double.IsNaN(localTime) || double.IsInfinity(localTime))
+            {
+                localTime = PositiveModulo(playable.GetTime(), length);
+            }
+
+            localTime = PositiveModulo(localTime + deltaTime * playbackSpeed, length);
+            playable.SetTime(localTime);
+            playable.SetDone(false);
+        }
+
+        private static double PositiveModulo(double value, double modulus)
+        {
+            double result = value % modulus;
+            return result < 0d ? result + modulus : result;
+        }
+
+        private void DestroyLocomotionMixer()
+        {
+            if (locomotionMixer.IsValid())
+            {
+                locomotionMixer.DisconnectInput(0);
+                locomotionMixer.DisconnectInput(1);
+                locomotionMixer.DisconnectInput(2);
+            }
+
+            if (idlePlayable.IsValid())
+            {
+                graph.DestroyPlayable(idlePlayable);
+                idlePlayable = default;
+            }
+
+            if (walkPlayable.IsValid())
+            {
+                graph.DestroyPlayable(walkPlayable);
+                walkPlayable = default;
+            }
+
+            if (movePlayable.IsValid())
+            {
+                graph.DestroyPlayable(movePlayable);
+                movePlayable = default;
+            }
+
+            if (locomotionMixer.IsValid())
+            {
+                graph.DestroyPlayable(locomotionMixer);
+                locomotionMixer = default;
+            }
+
+            locomotionBlendWeight = 0f;
+            ResetLocomotionTimes();
+        }
+
+        private void ResetLocomotionTimes()
+        {
+            idleLocomotionTime = 0d;
+            walkLocomotionTime = 0d;
+            moveLocomotionTime = 0d;
         }
 
         private void LogPlaybackTickDiagnostic(float clipLength)
@@ -735,6 +1328,7 @@ namespace ActToolkit
                 + ", outputValid=" + output.IsOutputValid()
                 + ", " + BuildAnimatorDiagnostic()
                 + ", idleClip=" + ClipName(idleClip)
+                + ", walkClip=" + ClipName(walkClip)
                 + ", moveClip=" + ClipName(moveClip);
         }
 
@@ -852,26 +1446,37 @@ namespace ActToolkit
             return "(" + value.x.ToString("0.000") + ", " + value.y.ToString("0.000") + ", " + value.z.ToString("0.000") + ")";
         }
 
-        private void OnDrawGizmosSelected()
+        private void OnDrawGizmos()
         {
-            if (currentAction == null || currentAction.markers == null)
+            DrawHitboxDebugGizmos();
+        }
+
+        private void DrawHitboxDebugGizmos()
+        {
+            if (!drawHitboxDebug || !Application.isPlaying || hitboxDebugSamples.Count == 0)
             {
                 return;
             }
 
-            Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, Vector3.one);
-            foreach (CombatAnimationMarker marker in activeHitboxes)
+            PruneHitboxDebugSamples();
+            for (int i = 0; i < hitboxDebugSamples.Count; i++)
             {
-                if (marker == null)
-                {
-                    continue;
-                }
-
-                Gizmos.color = marker.color;
-                Gizmos.DrawWireCube(marker.localOffset, marker.size);
+                HitboxDebugSample sample = hitboxDebugSamples[i];
+                Gizmos.color = sample.color;
+                Gizmos.matrix = Matrix4x4.TRS(sample.center, sample.rotation, Vector3.one);
+                Gizmos.DrawWireCube(Vector3.zero, sample.size);
             }
 
             Gizmos.matrix = Matrix4x4.identity;
+        }
+
+        private struct HitboxDebugSample
+        {
+            public Vector3 center;
+            public Vector3 size;
+            public Quaternion rotation;
+            public Color color;
+            public float expiresAt;
         }
 
         private readonly struct HitRecord : System.IEquatable<HitRecord>

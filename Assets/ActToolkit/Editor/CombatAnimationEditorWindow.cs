@@ -33,6 +33,7 @@ namespace ActToolkit.EditorTools
         private enum CharacterDefaultClipSlot
         {
             Idle,
+            Walk,
             Move
         }
 
@@ -119,7 +120,7 @@ namespace ActToolkit.EditorTools
                 EditorPrefs.GetInt(EditorPagePrefsKey, (int)EditorPage.ComboTable),
                 (int)EditorPage.CharacterSetup,
                 (int)EditorPage.DefinitionEditor);
-            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview);
+            characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview, CreateDefinitionAssetWithoutSelecting);
             characterActionGraphView.Initialize();
             LoadCharacterProfileFromPrefs();
             if (characterProfile == null)
@@ -535,6 +536,7 @@ namespace ActToolkit.EditorTools
             profile.avatar = LoadAvatarFromModel(modelPath);
             profile.comboTable = CreateComboTableAsset(displayName);
             profile.idleClip = null;
+            profile.walkClip = null;
             profile.moveClip = null;
             profile.EnsureDefaults();
 
@@ -596,12 +598,15 @@ namespace ActToolkit.EditorTools
             characterProfile.EnsureDefaults();
             EditorUtility.SetDirty(characterProfile);
 
+            SelectProfileModel();
+            PruneIncompatibleCharacterDefaults();
+            PruneIncompatibleActionsForCurrentCharacter();
+
             if (characterActionGraphView != null)
             {
                 characterActionGraphView.SetDatabase(characterProfile.comboTable, true);
             }
 
-            SelectProfileModel();
             if (selectFirstAction)
             {
                 SelectFirstProfileAction();
@@ -646,6 +651,140 @@ namespace ActToolkit.EditorTools
                 cachedSelectedModelAssetPath = string.Empty;
                 cachedSelectedModelAsset = null;
             }
+        }
+
+        private int PruneIncompatibleCharacterDefaults()
+        {
+            if (characterProfile == null)
+            {
+                return 0;
+            }
+
+            string modelPath = GetSelectedModelPath();
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return 0;
+            }
+
+            int removed = 0;
+            if (characterProfile.idleClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.idleClip))
+            {
+                characterProfile.idleClip = null;
+                removed++;
+            }
+
+            if (characterProfile.walkClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.walkClip))
+            {
+                characterProfile.walkClip = null;
+                removed++;
+            }
+
+            if (characterProfile.moveClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.moveClip))
+            {
+                characterProfile.moveClip = null;
+                removed++;
+            }
+
+            if (removed > 0)
+            {
+                EditorUtility.SetDirty(characterProfile);
+                if (clip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, clip))
+                {
+                    clip = null;
+                    selectedAnimationIndex = -1;
+                    normalizedTime = 0f;
+                    SampleClip();
+                }
+            }
+
+            return removed;
+        }
+
+        private int PruneIncompatibleActionsForCurrentCharacter()
+        {
+            CombatActionDatabase database = characterProfile == null ? null : characterProfile.comboTable;
+            if (database == null || database.actions == null)
+            {
+                return 0;
+            }
+
+            string modelPath = GetSelectedModelPath();
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return 0;
+            }
+
+            HashSet<CombatAnimationDefinition> keptActions = new HashSet<CombatAnimationDefinition>();
+            int removedActions = 0;
+            for (int i = database.actions.Count - 1; i >= 0; i--)
+            {
+                CombatAnimationDefinition action = database.actions[i];
+                if (action == null || !ActToolkitSkeletonCompatibility.IsDefinitionCompatibleWithModel(modelPath, action))
+                {
+                    database.actions.RemoveAt(i);
+                    removedActions++;
+                    continue;
+                }
+
+                keptActions.Add(action);
+            }
+
+            int removedReferences = PruneComboReferences(database, keptActions);
+            if (removedActions > 0 || removedReferences > 0)
+            {
+                database.RebuildLookup();
+                EditorUtility.SetDirty(database);
+                Debug.Log("[ActToolkit] Pruned " + removedActions + " incompatible actions and "
+                    + removedReferences + " combo references for " + characterProfile.displayName + ".");
+            }
+
+            return removedActions + removedReferences;
+        }
+
+        private int PruneComboReferences(CombatActionDatabase database, HashSet<CombatAnimationDefinition> keptActions)
+        {
+            int removed = 0;
+
+            database.EnsureEntryActions();
+            for (int i = database.entryActions.Count - 1; i >= 0; i--)
+            {
+                CombatActionEntry entry = database.entryActions[i];
+                CombatAnimationDefinition target = ResolveEntryTarget(database, entry);
+                if (target == null || !keptActions.Contains(target))
+                {
+                    database.entryActions.RemoveAt(i);
+                    removed++;
+                }
+            }
+
+            foreach (CombatAnimationDefinition action in keptActions)
+            {
+                if (action == null)
+                {
+                    continue;
+                }
+
+                action.EnsureActionLinks();
+                bool actionChanged = false;
+                for (int i = action.actionLinks.Count - 1; i >= 0; i--)
+                {
+                    CombatActionLink link = action.actionLinks[i];
+                    CombatAnimationDefinition target = ResolveLinkTarget(database, link);
+                    if (target == null || !keptActions.Contains(target))
+                    {
+                        action.actionLinks.RemoveAt(i);
+                        actionChanged = true;
+                        removed++;
+                    }
+                }
+
+                if (actionChanged)
+                {
+                    EditorUtility.SetDirty(action);
+                }
+            }
+
+            return removed;
         }
 
         private int FindModelCandidateIndex(string modelPath)
@@ -768,6 +907,8 @@ namespace ActToolkit.EditorTools
 
         private void DrawDefinitionEditorPage()
         {
+            EnsureDefaultMarkersForEmptyLightDefinition();
+            ClampAllMarkersToClip();
             DrawMainAuthoringWorkbench();
             EditorGUILayout.Space(8f);
             DrawUtilityDrawers();
@@ -820,6 +961,7 @@ namespace ActToolkit.EditorTools
             characterProfile.modelPrefab = (GameObject)EditorGUILayout.ObjectField("Model", characterProfile.modelPrefab, typeof(GameObject), false);
             characterProfile.avatar = (Avatar)EditorGUILayout.ObjectField("Avatar", characterProfile.avatar, typeof(Avatar), false);
             characterProfile.idleClip = (AnimationClip)EditorGUILayout.ObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip), false);
+            characterProfile.walkClip = (AnimationClip)EditorGUILayout.ObjectField("Walk Clip", characterProfile.walkClip, typeof(AnimationClip), false);
             characterProfile.moveClip = (AnimationClip)EditorGUILayout.ObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip), false);
             characterProfile.comboTable = (CombatActionDatabase)EditorGUILayout.ObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase), false);
             if (EditorGUI.EndChangeCheck())
@@ -865,6 +1007,7 @@ namespace ActToolkit.EditorTools
             DrawReadonlyObjectField("Avatar", characterProfile.avatar, typeof(Avatar));
             DrawReadonlyObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase));
             DrawReadonlyObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip));
+            DrawReadonlyObjectField("Walk Clip", characterProfile.walkClip, typeof(AnimationClip));
             DrawReadonlyObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip));
             EditorGUILayout.EndVertical();
         }
@@ -985,7 +1128,7 @@ namespace ActToolkit.EditorTools
 
             if (characterActionGraphView == null)
             {
-                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview);
+                characterActionGraphView = new CombatComboGraphView(Repaint, SelectActionForAuthoring, SelectComboActionForPreview, CreateDefinitionAssetWithoutSelecting);
                 characterActionGraphView.Initialize();
             }
 
@@ -1377,12 +1520,18 @@ namespace ActToolkit.EditorTools
                 return null;
             }
 
-            if (entry.targetDefinition != null)
+            CombatAnimationDefinition actionIdTarget = FindActionById(database, entry.targetActionId);
+            if (actionIdTarget != null)
             {
-                return entry.targetDefinition;
+                if (entry.targetDefinition != actionIdTarget)
+                {
+                    entry.targetDefinition = actionIdTarget;
+                }
+
+                return actionIdTarget;
             }
 
-            return FindActionById(database, entry.targetActionId);
+            return entry.targetDefinition;
         }
 
         private CombatAnimationDefinition ResolveLinkTarget(CombatActionDatabase database, CombatActionLink link)
@@ -1392,12 +1541,18 @@ namespace ActToolkit.EditorTools
                 return null;
             }
 
-            if (link.targetDefinition != null)
+            CombatAnimationDefinition actionIdTarget = FindActionById(database, link.targetActionId);
+            if (actionIdTarget != null)
             {
-                return link.targetDefinition;
+                if (link.targetDefinition != actionIdTarget)
+                {
+                    link.targetDefinition = actionIdTarget;
+                }
+
+                return actionIdTarget;
             }
 
-            return FindActionById(database, link.targetActionId);
+            return link.targetDefinition;
         }
 
         private CombatAnimationDefinition FindActionById(CombatActionDatabase database, string actionId)
@@ -1897,7 +2052,7 @@ namespace ActToolkit.EditorTools
                 EditorGUILayout.Space(8f);
             }
 
-            showRootMotionDrawer = EditorGUILayout.Foldout(showRootMotionDrawer, "Root Motion Analysis", true);
+            showRootMotionDrawer = EditorGUILayout.Foldout(showRootMotionDrawer, "Body Drift Analysis", true);
             if (showRootMotionDrawer)
             {
                 DrawRootMotionPanel();
@@ -1980,7 +2135,7 @@ namespace ActToolkit.EditorTools
                     string frameText = marker.StartFrame(clip, frameRate) + "f";
                     if (marker.duration > 0f)
                     {
-                        frameText += " +" + marker.DurationFrames(frameRate) + "f";
+                        frameText += " +" + marker.DurationFrames(clip, frameRate) + "f";
                     }
 
                     if (GUILayout.Toggle(selected, marker.kind + "  " + frameText, "Button", GUILayout.Width(170f)))
@@ -2119,8 +2274,13 @@ namespace ActToolkit.EditorTools
 
             int frameRate = GetAuthoringFrameRate();
             int frameCount = GetClipFrameCount(frameRate);
+            if (ClampMarkerToClip(marker))
+            {
+                EditorUtility.SetDirty(definition);
+            }
+
             int startFrame = marker.StartFrame(clip, frameRate);
-            int durationFrames = marker.DurationFrames(frameRate);
+            int durationFrames = marker.DurationFrames(clip, frameRate);
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Selected Marker", EditorStyles.boldLabel);
@@ -2136,7 +2296,8 @@ namespace ActToolkit.EditorTools
             EditorGUI.BeginChangeCheck();
             marker.kind = (CombatAnimationEventKind)EditorGUILayout.EnumPopup("Kind", marker.kind);
             int nextStartFrame = EditorGUILayout.IntSlider("Start Frame", startFrame, 0, Mathf.Max(0, frameCount));
-            int nextDurationFrames = Mathf.Max(0, EditorGUILayout.IntField("Duration Frames", durationFrames));
+            int maxDurationFrames = Mathf.Max(0, frameCount - nextStartFrame);
+            int nextDurationFrames = EditorGUILayout.IntSlider("Duration Frames", durationFrames, 0, maxDurationFrames);
             marker.gameplayTag = EditorGUILayout.TextField("Tag", marker.gameplayTag);
             marker.payload = EditorGUILayout.TextField("Payload", marker.payload);
             marker.localOffset = EditorGUILayout.Vector3Field("Local Offset", marker.localOffset);
@@ -2162,7 +2323,9 @@ namespace ActToolkit.EditorTools
 
             if (GUILayout.Button("Duplicate", GUILayout.Height(26f)))
             {
-                definition.markers.Insert(selectedMarkerIndex + 1, CloneMarker(marker));
+                CombatAnimationMarker clone = CloneMarker(marker);
+                ClampMarkerToClip(clone);
+                definition.markers.Insert(selectedMarkerIndex + 1, clone);
                 selectedMarkerIndex++;
                 EditorUtility.SetDirty(definition);
             }
@@ -2448,6 +2611,8 @@ namespace ActToolkit.EditorTools
                 ? null
                 : defaultClipSlot == CharacterDefaultClipSlot.Idle
                     ? characterProfile.idleClip
+                    : defaultClipSlot == CharacterDefaultClipSlot.Walk
+                        ? characterProfile.walkClip
                     : characterProfile.moveClip;
             int index = FindAnimationCandidateIndex(target);
             if (index >= 0)
@@ -2473,6 +2638,10 @@ namespace ActToolkit.EditorTools
             if (defaultClipSlot == CharacterDefaultClipSlot.Idle)
             {
                 characterProfile.idleClip = selectedClip;
+            }
+            else if (defaultClipSlot == CharacterDefaultClipSlot.Walk)
+            {
+                characterProfile.walkClip = selectedClip;
             }
             else
             {
@@ -2734,7 +2903,7 @@ namespace ActToolkit.EditorTools
                     int lane = TimelineLaneFor(marker.kind);
                     Rect laneRect = GetTimelineLaneRect(trackArea, lane, laneHeight, laneGap);
                     int startFrame = marker.StartFrame(clip, frameRate);
-                    int durationFrames = Mathf.Max(1, marker.DurationFrames(frameRate));
+                    int durationFrames = Mathf.Max(1, marker.DurationFrames(clip, frameRate));
                     float x = FrameToX(trackArea, startFrame, frameCount);
                     float width = Mathf.Max(marker.duration <= 0f ? 5f : 3f, trackArea.width * durationFrames / Mathf.Max(1, frameCount));
                     Rect markerRect = new Rect(x, laneRect.y + 4f, width, laneHeight - 8f);
@@ -2893,11 +3062,11 @@ namespace ActToolkit.EditorTools
                 }
                 else if (marker.kind == CombatAnimationEventKind.Invulnerability)
                 {
-                    invulnerabilityFrames += marker.DurationFrames(frameRate);
+                    invulnerabilityFrames += marker.DurationFrames(clip, frameRate);
                 }
                 else if (marker.kind == CombatAnimationEventKind.SuperArmor)
                 {
-                    armorFrames += marker.DurationFrames(frameRate);
+                    armorFrames += marker.DurationFrames(clip, frameRate);
                 }
             }
 
@@ -2919,11 +3088,11 @@ namespace ActToolkit.EditorTools
             }
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Root Motion Analysis", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Body Drift Analysis", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(LoadSelectedModelAsset() == null))
             {
-                if (GUILayout.Button("Analyze Root Motion", GUILayout.Height(26f)))
+                if (GUILayout.Button("Analyze Body Drift", GUILayout.Height(26f)))
                 {
                     AnalyzeRootMotion();
                 }
@@ -3173,8 +3342,23 @@ namespace ActToolkit.EditorTools
                     }
                     EditorGUILayout.EndHorizontal();
 
-                    marker.normalizedTime = EditorGUILayout.Slider("Time", marker.normalizedTime, 0f, 1f);
-                    marker.duration = Mathf.Max(0f, EditorGUILayout.FloatField("Duration", marker.duration));
+                    int frameRate = GetAuthoringFrameRate();
+                    int frameCount = GetClipFrameCount(frameRate);
+                    if (frameCount > 0)
+                    {
+                        int startFrame = marker.StartFrame(clip, frameRate);
+                        int nextStartFrame = EditorGUILayout.IntSlider("Start Frame", startFrame, 0, frameCount);
+                        int maxDurationFrames = Mathf.Max(0, frameCount - nextStartFrame);
+                        int nextDurationFrames = EditorGUILayout.IntSlider("Duration Frames", marker.DurationFrames(clip, frameRate), 0, maxDurationFrames);
+                        marker.normalizedTime = FrameToNormalizedTime(nextStartFrame, frameCount);
+                        marker.duration = FramesToSeconds(nextDurationFrames, frameRate);
+                    }
+                    else
+                    {
+                        marker.normalizedTime = EditorGUILayout.Slider("Time", marker.normalizedTime, 0f, 1f);
+                        marker.duration = Mathf.Max(0f, EditorGUILayout.FloatField("Duration", marker.duration));
+                    }
+
                     marker.gameplayTag = EditorGUILayout.TextField("Tag", marker.gameplayTag);
                     marker.payload = EditorGUILayout.TextField("Payload", marker.payload);
                     marker.localOffset = EditorGUILayout.Vector3Field("Local Offset", marker.localOffset);
@@ -3183,8 +3367,7 @@ namespace ActToolkit.EditorTools
                     marker.serverAuthoritative = EditorGUILayout.Toggle("Server Auth", marker.serverAuthoritative);
 
                     EditorGUILayout.LabelField("Clip Time", marker.TimeSeconds(clip).ToString("0.000") + "s");
-                    int frameRate = GetAuthoringFrameRate();
-                    EditorGUILayout.LabelField("Frames", marker.StartFrame(clip, frameRate) + " - " + marker.EndFrame(clip, frameRate) + " (" + marker.DurationFrames(frameRate) + "f)");
+                    EditorGUILayout.LabelField("Frames", marker.StartFrame(clip, frameRate) + " - " + marker.EndFrame(clip, frameRate) + " (" + marker.DurationFrames(clip, frameRate) + "f)");
                     EditorGUILayout.EndVertical();
                 }
             }
@@ -3210,7 +3393,9 @@ namespace ActToolkit.EditorTools
             else if (duplicateIndex >= 0)
             {
                 CombatAnimationMarker source = definition.markers[duplicateIndex];
-                definition.markers.Insert(duplicateIndex + 1, CloneMarker(source));
+                CombatAnimationMarker clone = CloneMarker(source);
+                ClampMarkerToClip(clone);
+                definition.markers.Insert(duplicateIndex + 1, clone);
                 selectedMarkerIndex = duplicateIndex + 1;
                 EditorUtility.SetDirty(definition);
             }
@@ -3221,30 +3406,112 @@ namespace ActToolkit.EditorTools
             }
         }
 
-        private void CreateDefinitionAsset()
+        private CombatAnimationDefinition CreateDefinitionAsset()
+        {
+            return CreateDefinitionAsset(true);
+        }
+
+        private CombatAnimationDefinition CreateDefinitionAssetWithoutSelecting()
+        {
+            return CreateDefinitionAsset(false);
+        }
+
+        private CombatAnimationDefinition CreateDefinitionAsset(bool selectAsset)
         {
             ActToolkitEditorUtilities.EnsureGeneratedFolders();
 
-            string displayName = clip == null ? "New Action" : BuildAnimationDisplayName(clip.name);
-            string defaultName = clip == null ? "CombatAnimationDefinition" : "CA_" + SanitizeAssetName(displayName);
+            string displayName = BuildUniqueStateName(clip == null ? "New Action" : BuildAnimationDisplayName(clip.name));
+            string defaultName = "CA_" + SanitizeAssetName(displayName);
             string path = AssetDatabase.GenerateUniqueAssetPath(ActToolkitEditorUtilities.DefaultCombatDefinitionFolder + "/" + defaultName + ".asset");
 
             definition = CreateInstance<CombatAnimationDefinition>();
             definition.clip = clip;
-            definition.actionId = clip == null ? "action.new" : BuildActionIdFromClipName(clip.name);
-            definition.stateName = clip == null ? "New Action" : displayName;
+            definition.actionId = BuildUniqueActionId(clip == null ? "action.new_action" : BuildActionIdFromClipName(clip.name));
+            definition.stateName = displayName;
             definition.authoringFrameRate = 60;
             AssetDatabase.CreateAsset(definition, path);
             AddDefinitionToCurrentCharacter(definition);
             AssetDatabase.SaveAssets();
-            Selection.activeObject = definition;
-            EditorGUIUtility.PingObject(definition);
+            if (selectAsset)
+            {
+                Selection.activeObject = definition;
+                EditorGUIUtility.PingObject(definition);
+            }
+
+            return definition;
+        }
+
+        private string BuildUniqueStateName(string baseName)
+        {
+            string normalizedBase = string.IsNullOrWhiteSpace(baseName) ? "New Action" : baseName.Trim();
+            CombatActionDatabase database = characterProfile == null ? null : characterProfile.comboTable;
+            HashSet<string> existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (CombatAnimationDefinition action in GetDatabaseActions(database))
+            {
+                if (action != null && !string.IsNullOrWhiteSpace(action.stateName))
+                {
+                    existingNames.Add(action.stateName.Trim());
+                }
+            }
+
+            if (!existingNames.Contains(normalizedBase))
+            {
+                return normalizedBase;
+            }
+
+            for (int i = 2; i < 10000; i++)
+            {
+                string candidate = normalizedBase + " " + i;
+                if (!existingNames.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return normalizedBase + " " + Guid.NewGuid().ToString("N").Substring(0, 6);
+        }
+
+        private string BuildUniqueActionId(string baseActionId)
+        {
+            string normalizedBase = string.IsNullOrWhiteSpace(baseActionId) ? "action.new_action" : baseActionId.Trim();
+            CombatActionDatabase database = characterProfile == null ? null : characterProfile.comboTable;
+            HashSet<string> existingIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (CombatAnimationDefinition action in GetDatabaseActions(database))
+            {
+                if (action != null && !string.IsNullOrWhiteSpace(action.actionId))
+                {
+                    existingIds.Add(action.actionId.Trim());
+                }
+            }
+
+            if (!existingIds.Contains(normalizedBase))
+            {
+                return normalizedBase;
+            }
+
+            for (int i = 2; i < 10000; i++)
+            {
+                string candidate = normalizedBase + "_" + i;
+                if (!existingIds.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return normalizedBase + "_" + Guid.NewGuid().ToString("N").Substring(0, 6);
         }
 
         private void AddDefinitionToCurrentCharacter(CombatAnimationDefinition action)
         {
             if (characterProfile == null || action == null)
             {
+                return;
+            }
+
+            string modelPath = GetSelectedModelPath();
+            if (!ActToolkitSkeletonCompatibility.IsDefinitionCompatibleWithModel(modelPath, action))
+            {
+                ShowNotification(new GUIContent("Action skeleton does not match this character."));
                 return;
             }
 
@@ -3691,6 +3958,7 @@ namespace ActToolkit.EditorTools
         private void CachePreviewSampleTransform()
         {
             previewSampleTransform = previewAnimator != null ? previewAnimator.transform : null;
+
             if (previewSampleTransform == null)
             {
                 previewSampleInitialLocalPosition = Vector3.zero;
@@ -3723,6 +3991,63 @@ namespace ActToolkit.EditorTools
             previewSampleTransform.localScale = previewSampleInitialLocalScale;
         }
 
+        private static Transform ResolveAnimatedMotionRoot(Transform animatorTransform)
+        {
+            if (animatorTransform == null)
+            {
+                return null;
+            }
+
+            return animatorTransform.childCount > 0 ? animatorTransform.GetChild(0) : animatorTransform;
+        }
+
+        private static Transform ResolveBodyMotionRoot(Animator targetAnimator)
+        {
+            if (targetAnimator == null)
+            {
+                return null;
+            }
+
+            if (targetAnimator.avatar != null && targetAnimator.avatar.isHuman)
+            {
+                Transform hips = targetAnimator.GetBoneTransform(HumanBodyBones.Hips);
+                if (hips != null)
+                {
+                    return hips;
+                }
+            }
+
+            return FindDescendantByName(targetAnimator.transform, "hips", "pelvis");
+        }
+
+        private static Transform FindDescendantByName(Transform root, params string[] names)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform child = root.GetChild(i);
+                for (int nameIndex = 0; nameIndex < names.Length; nameIndex++)
+                {
+                    if (string.Equals(child.name, names[nameIndex], StringComparison.OrdinalIgnoreCase))
+                    {
+                        return child;
+                    }
+                }
+
+                Transform nested = FindDescendantByName(child, names);
+                if (nested != null)
+                {
+                    return nested;
+                }
+            }
+
+            return null;
+        }
+
         private void RefreshAnimationLibrary(bool forceAssetRefresh)
         {
             ActToolkitEditorUtilities.EnsureExternalAssetFolders();
@@ -3730,6 +4055,7 @@ namespace ActToolkit.EditorTools
             if (forceAssetRefresh)
             {
                 AssetDatabase.Refresh();
+                ActToolkitSkeletonCompatibility.ClearCache();
             }
 
             animationCandidates.Clear();
@@ -3797,37 +4123,7 @@ namespace ActToolkit.EditorTools
         private bool IsAnimationCompatibleWithSelectedModel(string animationPath, AnimationClip animationClip)
         {
             string modelPath = GetSelectedModelPath();
-            if (string.IsNullOrWhiteSpace(modelPath))
-            {
-                return true;
-            }
-
-            ModelImporterAnimationType modelType = GetModelImporterAnimationType(modelPath);
-            ModelImporterAnimationType animationType = GetModelImporterAnimationType(animationPath);
-            if (modelType == ModelImporterAnimationType.Human && animationType == ModelImporterAnimationType.Human)
-            {
-                return true;
-            }
-
-            if (animationType == ModelImporterAnimationType.None)
-            {
-                return true;
-            }
-
-            if (AreTransformBindingsCompatibleWithSelectedModel(animationClip))
-            {
-                return true;
-            }
-
-            string modelSource = BuildAssetSourceCode(modelPath);
-            string animationSource = BuildAssetSourceCode(animationPath);
-            if (string.Equals(modelSource, "Local", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(animationSource, "Local", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            return string.Equals(modelSource, animationSource, StringComparison.OrdinalIgnoreCase);
+            return ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, animationClip);
         }
 
         private bool AreTransformBindingsCompatibleWithSelectedModel(AnimationClip animationClip)
@@ -3960,6 +4256,13 @@ namespace ActToolkit.EditorTools
 
         private void AssignClipToCurrentDefinition(AnimationClip nextClip, bool resetTime)
         {
+            if (nextClip != null && !IsAnimationCompatibleWithSelectedModel(AssetDatabase.GetAssetPath(nextClip), nextClip))
+            {
+                ShowNotification(new GUIContent("Clip skeleton does not match this character."));
+                RefreshAnimationLibrary(false);
+                return;
+            }
+
             clip = nextClip;
             if (resetTime)
             {
@@ -3971,6 +4274,7 @@ namespace ActToolkit.EditorTools
             if (definition != null)
             {
                 definition.clip = clip;
+                ClampAllMarkersToClip();
                 EditorUtility.SetDirty(definition);
             }
 
@@ -4221,7 +4525,9 @@ namespace ActToolkit.EditorTools
             }
 
             definition.EnsureMarkers();
-            definition.markers.Add(CreateMarkerFromTemplate(kind));
+            CombatAnimationMarker marker = CreateMarkerFromTemplate(kind);
+            ClampMarkerToClip(marker);
+            definition.markers.Add(marker);
             definition.SortMarkers();
             EditorUtility.SetDirty(definition);
         }
@@ -4284,9 +4590,175 @@ namespace ActToolkit.EditorTools
             int frameRate = GetAuthoringFrameRate();
             int frameCount = GetClipFrameCount(frameRate);
             CombatAnimationMarker marker = CreateMarkerFromTemplate(kind);
-            marker.normalizedTime = FrameToNormalizedTime(Mathf.Clamp(startFrame, 0, frameCount), frameCount);
-            marker.duration = FramesToSeconds(durationFrames, frameRate);
+            int clampedStartFrame = Mathf.Clamp(startFrame, 0, frameCount);
+            int clampedDurationFrames = Mathf.Clamp(durationFrames, 0, Mathf.Max(0, frameCount - clampedStartFrame));
+            marker.normalizedTime = FrameToNormalizedTime(clampedStartFrame, frameCount);
+            marker.duration = FramesToSeconds(clampedDurationFrames, frameRate);
             definition.markers.Add(marker);
+        }
+
+        private bool ClampMarkerToClip(CombatAnimationMarker marker)
+        {
+            if (marker == null)
+            {
+                return false;
+            }
+
+            int frameRate = GetAuthoringFrameRate();
+            int frameCount = GetClipFrameCount(frameRate);
+            if (frameRate <= 0 || frameCount <= 0)
+            {
+                return false;
+            }
+
+            int startFrame = Mathf.Clamp(marker.StartFrame(clip, frameRate), 0, frameCount);
+            int durationFrames = marker.DurationFrames(frameRate);
+            int clampedDurationFrames = Mathf.Clamp(durationFrames, 0, Mathf.Max(0, frameCount - startFrame));
+            float nextNormalizedTime = FrameToNormalizedTime(startFrame, frameCount);
+            float nextDuration = FramesToSeconds(clampedDurationFrames, frameRate);
+            bool changed = !Mathf.Approximately(marker.normalizedTime, nextNormalizedTime)
+                || !Mathf.Approximately(marker.duration, nextDuration);
+
+            marker.normalizedTime = nextNormalizedTime;
+            marker.duration = nextDuration;
+            return changed;
+        }
+
+        private void ClampAllMarkersToClip()
+        {
+            if (definition == null)
+            {
+                return;
+            }
+
+            if (clip == null && definition.clip != null)
+            {
+                clip = definition.clip;
+            }
+
+            if (clip == null)
+            {
+                return;
+            }
+
+            definition.EnsureMarkers();
+            bool changed = false;
+            foreach (CombatAnimationMarker marker in definition.markers)
+            {
+                changed |= ClampMarkerToClip(marker);
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            definition.SortMarkers();
+            EditorUtility.SetDirty(definition);
+        }
+
+        private void EnsureDefaultMarkersForEmptyLightDefinition()
+        {
+            if (definition == null)
+            {
+                return;
+            }
+
+            definition.EnsureMarkers();
+            if (definition.markers.Count > 0 || !IsDefinitionInCurrentComboTable(definition) || !LooksLikeLightDefinition(definition))
+            {
+                return;
+            }
+
+            if (clip == null && definition.clip != null)
+            {
+                clip = definition.clip;
+            }
+
+            int frameRate = GetAuthoringFrameRate();
+            int frameCount = GetClipFrameCount(frameRate);
+            if (frameCount <= 0)
+            {
+                return;
+            }
+
+            CombatActionLink firstLink = FirstOutgoingActionLink(definition);
+            int hitFrame = firstLink == null
+                ? Mathf.RoundToInt(frameCount * 0.28f)
+                : firstLink.startFrame + 5;
+            hitFrame = Mathf.Clamp(hitFrame, 0, Mathf.Max(0, frameCount - 4));
+
+            int lockEndFrame = firstLink == null
+                ? frameCount
+                : Mathf.Max(firstLink.endFrame + 2, hitFrame + 8);
+            lockEndFrame = Mathf.Clamp(lockEndFrame, 0, frameCount);
+
+            definition.markers.Add(CreateDefaultLightMarker(CombatAnimationEventKind.NetworkSync, 0, 0));
+            definition.markers.Add(CreateDefaultLightMarker(CombatAnimationEventKind.MovementLock, 0, lockEndFrame));
+            definition.markers.Add(CreateDefaultLightMarker(CombatAnimationEventKind.Hitbox, hitFrame, 4));
+
+            if (firstLink != null)
+            {
+                int comboStart = Mathf.Clamp(firstLink.startFrame, 0, frameCount);
+                int comboEnd = Mathf.Clamp(Mathf.Max(firstLink.startFrame, firstLink.endFrame), comboStart, frameCount);
+                definition.markers.Add(CreateDefaultLightMarker(CombatAnimationEventKind.ComboBranch, comboStart, comboEnd - comboStart));
+            }
+
+            definition.SortMarkers();
+            selectedMarkerIndex = -1;
+            EditorUtility.SetDirty(definition);
+            AssetDatabase.SaveAssets();
+        }
+
+        private CombatAnimationMarker CreateDefaultLightMarker(CombatAnimationEventKind kind, int startFrame, int durationFrames)
+        {
+            int frameRate = GetAuthoringFrameRate();
+            int frameCount = GetClipFrameCount(frameRate);
+            int clampedStartFrame = Mathf.Clamp(startFrame, 0, frameCount);
+            int clampedDurationFrames = Mathf.Clamp(durationFrames, 0, Mathf.Max(0, frameCount - clampedStartFrame));
+            CombatAnimationMarker marker = CreateMarkerFromTemplate(kind);
+            marker.normalizedTime = FrameToNormalizedTime(clampedStartFrame, frameCount);
+            marker.duration = FramesToSeconds(clampedDurationFrames, frameRate);
+            return marker;
+        }
+
+        private static bool LooksLikeLightDefinition(CombatAnimationDefinition candidate)
+        {
+            if (candidate == null)
+            {
+                return false;
+            }
+
+            string text = ((candidate.actionId ?? string.Empty)
+                + " " + (candidate.stateName ?? string.Empty)
+                + " " + candidate.name).ToLowerInvariant();
+            return text.Contains("light")
+                || text.Contains("sword_regular")
+                || text.Contains("轻击")
+                || text.Contains("轻攻击");
+        }
+
+        private static CombatActionLink FirstOutgoingActionLink(CombatAnimationDefinition candidate)
+        {
+            if (candidate == null || candidate.actionLinks == null)
+            {
+                return null;
+            }
+
+            foreach (CombatActionLink link in candidate.actionLinks)
+            {
+                if (link == null)
+                {
+                    continue;
+                }
+
+                if (link.targetDefinition != null || !string.IsNullOrWhiteSpace(link.targetActionId))
+                {
+                    return link;
+                }
+            }
+
+            return null;
         }
 
         private CombatAnimationMarker CreateMarkerFromTemplate(CombatAnimationEventKind kind)
@@ -4303,9 +4775,10 @@ namespace ActToolkit.EditorTools
             {
                 case CombatAnimationEventKind.Hitbox:
                     marker.gameplayTag = "combat.hitbox.light";
+                    marker.payload = "damage=10";
                     marker.duration = FramesToSeconds(4, frameRate);
-                    marker.localOffset = new Vector3(0f, 1.1f, 0.9f);
-                    marker.size = new Vector3(0.8f, 0.9f, 1.0f);
+                    marker.localOffset = new Vector3(0f, 0.95f, 0.95f);
+                    marker.size = new Vector3(1.1f, 0.9f, 1.15f);
                     marker.color = new Color(1f, 0.55f, 0.18f, 0.75f);
                     marker.serverAuthoritative = true;
                     break;
@@ -4836,7 +5309,19 @@ namespace ActToolkit.EditorTools
 
             try
             {
-                Transform root = sampleInstance.transform;
+                Animator sampleAnimator = sampleInstance.GetComponentInChildren<Animator>();
+                GameObject sampleTarget = sampleAnimator == null ? sampleInstance : sampleAnimator.gameObject;
+                Transform root = ResolveBodyMotionRoot(sampleAnimator);
+                if (root == null)
+                {
+                    root = ResolveAnimatedMotionRoot(sampleAnimator == null ? sampleInstance.transform : sampleAnimator.transform);
+                }
+
+                if (root == null)
+                {
+                    root = sampleTarget.transform;
+                }
+
                 Vector3 previousPosition = root.position;
                 Vector3 firstPosition = root.position;
                 bool initialized = false;
@@ -4844,7 +5329,7 @@ namespace ActToolkit.EditorTools
                 for (int frame = 0; frame <= frameCount; frame++)
                 {
                     float sampleTime = frame / (float)frameRate;
-                    clip.SampleAnimation(sampleInstance, Mathf.Min(sampleTime, clip.length));
+                    clip.SampleAnimation(sampleTarget, Mathf.Min(sampleTime, clip.length));
 
                     Vector3 currentPosition = root.position;
                     if (!initialized)
@@ -4865,7 +5350,7 @@ namespace ActToolkit.EditorTools
 
                 rootMotionTotalDistance = rootMotionDistances.Count == 0 ? 0f : rootMotionDistances[rootMotionDistances.Count - 1];
                 rootMotionStatus = rootMotionTotalDistance <= 0.0001f
-                    ? "Analyzed. No root translation was detected on the preview object."
+                    ? "Analyzed. No translation was detected on the animation/body root."
                     : "Analyzed " + (frameCount + 1) + " samples.";
             }
             finally
@@ -5194,9 +5679,9 @@ namespace ActToolkit.EditorTools
                     kind = marker.kind.ToString(),
                     normalizedTime = marker.normalizedTime,
                     timeSeconds = marker.TimeSeconds(clip),
-                    duration = marker.duration,
+                    duration = FramesToSeconds(marker.DurationFrames(clip, frameRate), frameRate),
                     startFrame = marker.StartFrame(clip, frameRate),
-                    durationFrames = marker.DurationFrames(frameRate),
+                    durationFrames = marker.DurationFrames(clip, frameRate),
                     endFrame = marker.EndFrame(clip, frameRate),
                     gameplayTag = marker.gameplayTag,
                     payload = marker.payload,
@@ -5646,12 +6131,18 @@ namespace ActToolkit.EditorTools
         private readonly Action repaint;
         private readonly Action<CombatAnimationDefinition> openAction;
         private readonly Action<CombatAnimationDefinition> selectAction;
+        private readonly Func<CombatAnimationDefinition> createDefinitionAction;
 
-        public CombatComboGraphView(Action repaint, Action<CombatAnimationDefinition> openAction = null, Action<CombatAnimationDefinition> selectAction = null)
+        public CombatComboGraphView(
+            Action repaint,
+            Action<CombatAnimationDefinition> openAction = null,
+            Action<CombatAnimationDefinition> selectAction = null,
+            Func<CombatAnimationDefinition> createDefinitionAction = null)
         {
             this.repaint = repaint;
             this.openAction = openAction;
             this.selectAction = selectAction;
+            this.createDefinitionAction = createDefinitionAction;
         }
 
         public CombatActionDatabase Database => database;
@@ -5727,6 +6218,14 @@ namespace ActToolkit.EditorTools
                 RefreshGraph();
             }
 
+            using (new EditorGUI.DisabledScope(database == null || createDefinitionAction == null))
+            {
+                if (GUILayout.Button(new GUIContent("New Definition", "Create a new action definition and add it to this combo table."), EditorStyles.toolbarButton, GUILayout.Width(108f)))
+                {
+                    CreateDefinitionFromGraph();
+                }
+            }
+
             using (new EditorGUI.DisabledScope(database == null || nodes.Count == 0))
             {
                 if (GUILayout.Button(new GUIContent("Auto Layout", "Arrange the combo graph from entry moves and save the node positions."), EditorStyles.toolbarButton, GUILayout.Width(88f)))
@@ -5748,6 +6247,39 @@ namespace ActToolkit.EditorTools
             GUILayout.FlexibleSpace();
             GUILayout.Label("Drag output to create; drag connected input to retarget.", EditorStyles.miniLabel);
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void CreateDefinitionFromGraph()
+        {
+            Vector2 graphPosition = graphViewportSize == Vector2.zero
+                ? new Vector2(AutoLayoutFirstActionX, AutoLayoutTop)
+                : graphScroll + graphViewportSize * 0.5f - new Vector2(NodeWidth * 0.5f, NodeHeight * 0.5f);
+            CombatAnimationDefinition createdDefinition = CreateDefinitionAtGraphPosition(graphPosition);
+            if (createdDefinition == null)
+            {
+                return;
+            }
+
+            SelectDefinitionNode(createdDefinition);
+            RequestRepaint();
+        }
+
+        private CombatAnimationDefinition CreateDefinitionAtGraphPosition(Vector2 graphPosition)
+        {
+            CombatAnimationDefinition createdDefinition = createDefinitionAction == null ? null : createDefinitionAction.Invoke();
+            if (createdDefinition == null)
+            {
+                return null;
+            }
+
+            RefreshGraph();
+            if (nodeLookup.TryGetValue(createdDefinition, out GraphNode node))
+            {
+                node.rect.position = ClampNodePosition(graphPosition);
+                SaveNodePosition(node);
+            }
+
+            return createdDefinition;
         }
 
         private void DrawGraphPanel(bool embedded)
@@ -5969,6 +6501,18 @@ namespace ActToolkit.EditorTools
                 Selection.activeObject = inspectedDefinition;
                 EditorGUIUtility.PingObject(inspectedDefinition);
             }
+
+            EditorGUILayout.Space(12f);
+            Color previousColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.85f, 0.32f, 0.28f, 1f);
+            if (GUILayout.Button("Delete Definition", GUILayout.Height(28f)))
+            {
+                GUI.backgroundColor = previousColor;
+                DeleteDefinitionFromGraph(inspectedDefinition);
+                return;
+            }
+
+            GUI.backgroundColor = previousColor;
         }
 
         private void DrawEntryNode()
@@ -6287,6 +6831,13 @@ namespace ActToolkit.EditorTools
                 Mathf.Clamp(scroll.y, 0f, Mathf.Max(0f, CanvasHeight - viewportSize.y)));
         }
 
+        private static Vector2 ClampNodePosition(Vector2 position)
+        {
+            return new Vector2(
+                Mathf.Clamp(position.x, 0f, Mathf.Max(0f, CanvasWidth - NodeWidth)),
+                Mathf.Clamp(position.y, 0f, Mathf.Max(0f, CanvasHeight - NodeHeight)));
+        }
+
         private void HandleEntryNodeSelection(Event evt)
         {
             if (evt.type != EventType.MouseDown || evt.button != 0 || !entryNodeRect.Contains(evt.mousePosition))
@@ -6400,6 +6951,7 @@ namespace ActToolkit.EditorTools
 
             if (target != null)
             {
+                selectedInputAction = CombatInputActionNames.Normalize(dragInputAction);
                 if (dragExistingEntry != null)
                 {
                     RetargetEntry(dragExistingEntry, target.definition);
@@ -6415,6 +6967,32 @@ namespace ActToolkit.EditorTools
                 else if (dragSourceDefinition != null && dragSourceDefinition != target.definition)
                 {
                     CreateOrUpdateActionLink(dragSourceDefinition, target.definition);
+                }
+            }
+            else
+            {
+                CombatAnimationDefinition createdDefinition = CreateDefinitionAtGraphPosition(mousePosition - new Vector2(NodeWidth * 0.5f, NodeHeight * 0.5f));
+                if (createdDefinition != null)
+                {
+                    selectedInputAction = CombatInputActionNames.Normalize(dragInputAction);
+                    if (dragExistingEntry != null)
+                    {
+                        RetargetEntry(dragExistingEntry, createdDefinition);
+                    }
+                    else if (dragExistingLink != null && dragSourceDefinition != null && dragSourceDefinition != createdDefinition)
+                    {
+                        RetargetActionLink(dragSourceDefinition, dragExistingLink, createdDefinition);
+                    }
+                    else if (draggingFromEntry)
+                    {
+                        CreateOrUpdateEntry(createdDefinition);
+                    }
+                    else if (dragSourceDefinition != null && dragSourceDefinition != createdDefinition)
+                    {
+                        CreateOrUpdateActionLink(dragSourceDefinition, createdDefinition);
+                    }
+
+                    SelectDefinitionNode(createdDefinition);
                 }
             }
 
@@ -6568,6 +7146,122 @@ namespace ActToolkit.EditorTools
             selectedLink = link;
         }
 
+        private void DeleteDefinitionFromGraph(CombatAnimationDefinition target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            string assetPath = AssetDatabase.GetAssetPath(target);
+            string displayName = NodeDisplayName(target);
+            string message = string.IsNullOrWhiteSpace(assetPath)
+                ? "Delete " + displayName + " from this combo table?"
+                : "Delete " + displayName + " and its asset?\n\n" + assetPath;
+            if (!EditorUtility.DisplayDialog("Delete Definition", message, "Delete", "Cancel"))
+            {
+                return;
+            }
+
+            RemoveDefinitionReferences(target);
+            DeleteNodePosition(target);
+
+            bool deletedAsset = false;
+            if (!string.IsNullOrWhiteSpace(assetPath))
+            {
+                deletedAsset = AssetDatabase.DeleteAsset(assetPath);
+                if (!deletedAsset)
+                {
+                    Debug.LogWarning("[ActToolkit] Failed to delete definition asset: " + assetPath);
+                }
+            }
+            else
+            {
+                UnityEngine.Object.DestroyImmediate(target, true);
+                deletedAsset = true;
+            }
+
+            if (deletedAsset)
+            {
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            selectedDefinition = null;
+            selectedEntry = null;
+            selectedLink = null;
+            selectedLinkSource = null;
+            Selection.activeObject = database;
+            RefreshGraph();
+            RequestRepaint();
+        }
+
+        private void RemoveDefinitionReferences(CombatAnimationDefinition target)
+        {
+            if (database == null || target == null)
+            {
+                return;
+            }
+
+            bool databaseChanged = false;
+            if (database.actions != null)
+            {
+                for (int i = database.actions.Count - 1; i >= 0; i--)
+                {
+                    if (database.actions[i] == null || database.actions[i] == target)
+                    {
+                        database.actions.RemoveAt(i);
+                        databaseChanged = true;
+                    }
+                }
+            }
+
+            database.EnsureEntryActions();
+            for (int i = database.entryActions.Count - 1; i >= 0; i--)
+            {
+                CombatActionEntry entry = database.entryActions[i];
+                if (entry == null || EntryTargets(entry, target))
+                {
+                    database.entryActions.RemoveAt(i);
+                    databaseChanged = true;
+                }
+            }
+
+            if (database.actions != null)
+            {
+                foreach (CombatAnimationDefinition action in database.actions)
+                {
+                    if (action == null)
+                    {
+                        continue;
+                    }
+
+                    action.EnsureActionLinks();
+                    bool actionChanged = false;
+                    for (int i = action.actionLinks.Count - 1; i >= 0; i--)
+                    {
+                        CombatActionLink link = action.actionLinks[i];
+                        if (link == null || LinkTargets(link, target))
+                        {
+                            action.actionLinks.RemoveAt(i);
+                            actionChanged = true;
+                        }
+                    }
+
+                    if (actionChanged)
+                    {
+                        EditorUtility.SetDirty(action);
+                    }
+                }
+            }
+
+            if (databaseChanged)
+            {
+                database.RebuildLookup();
+                EditorUtility.SetDirty(database);
+            }
+        }
+
         private CombatActionEntry FindEntryTargeting(CombatAnimationDefinition target)
         {
             if (database == null || target == null || database.entryActions == null)
@@ -6622,8 +7316,13 @@ namespace ActToolkit.EditorTools
                 return false;
             }
 
-            return entry.targetDefinition == target
-                || (!string.IsNullOrWhiteSpace(target.actionId) && string.Equals(entry.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(entry.targetActionId))
+            {
+                return !string.IsNullOrWhiteSpace(target.actionId)
+                    && string.Equals(entry.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return entry.targetDefinition == target;
         }
 
         private static bool LinkTargets(CombatActionLink link, CombatAnimationDefinition target)
@@ -6633,8 +7332,13 @@ namespace ActToolkit.EditorTools
                 return false;
             }
 
-            return link.targetDefinition == target
-                || (!string.IsNullOrWhiteSpace(target.actionId) && string.Equals(link.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(link.targetActionId))
+            {
+                return !string.IsNullOrWhiteSpace(target.actionId)
+                    && string.Equals(link.targetActionId, target.actionId, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return link.targetDefinition == target;
         }
 
         private void RefreshGraph()
@@ -6707,14 +7411,14 @@ namespace ActToolkit.EditorTools
 
         private GraphNode ResolveTargetNode(CombatAnimationDefinition targetDefinition, string targetActionId)
         {
-            if (targetDefinition != null && nodeLookup.TryGetValue(targetDefinition, out GraphNode directNode))
-            {
-                return directNode;
-            }
-
             if (!string.IsNullOrWhiteSpace(targetActionId) && idLookup.TryGetValue(targetActionId, out GraphNode idNode))
             {
                 return idNode;
+            }
+
+            if (targetDefinition != null && nodeLookup.TryGetValue(targetDefinition, out GraphNode directNode))
+            {
+                return directNode;
             }
 
             return null;
@@ -7067,6 +7771,18 @@ namespace ActToolkit.EditorTools
             string key = NodePrefsKey(node.definition);
             EditorPrefs.SetFloat(key + ".x", node.rect.x);
             EditorPrefs.SetFloat(key + ".y", node.rect.y);
+        }
+
+        private static void DeleteNodePosition(CombatAnimationDefinition definition)
+        {
+            if (definition == null)
+            {
+                return;
+            }
+
+            string key = NodePrefsKey(definition);
+            EditorPrefs.DeleteKey(key + ".x");
+            EditorPrefs.DeleteKey(key + ".y");
         }
 
         private static string NodePrefsKey(CombatAnimationDefinition definition)

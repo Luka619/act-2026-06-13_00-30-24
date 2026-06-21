@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
   clip: {fileID: 938527645004508068, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.jump_attack
-  stateName: Combat / Jump Attack
+  stateName: "\u8DF3\u8DC3\u653B\u51FB"
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0

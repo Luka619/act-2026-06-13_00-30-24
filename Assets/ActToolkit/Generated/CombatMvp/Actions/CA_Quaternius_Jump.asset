@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
   clip: {fileID: -3620764259951660000, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.jump
-  stateName: Combat / Jump
+  stateName: "\u8DF3\u8DC3"
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0
@@ -25,7 +25,7 @@ MonoBehaviour:
     normalizedTime: 0
     duration: 0
     gameplayTag: net.sync.action
-    payload:
+    payload: 
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
@@ -35,7 +35,7 @@ MonoBehaviour:
     normalizedTime: 0
     duration: 0.8
     gameplayTag: combat.movement.lock
-    payload:
+    payload: 
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 0.45, g: 0.7, b: 1, a: 0.65}
@@ -45,17 +45,9 @@ MonoBehaviour:
     normalizedTime: 0.25
     duration: 0.65
     gameplayTag: combat.combo.branch
-    payload:
+    payload: 
     localOffset: {x: 0, y: 1, z: 0.8}
     size: {x: 0.7, y: 0.8, z: 0.9}
     color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
     serverAuthoritative: 1
-  actionLinks:
-  - id: 622e8189c2544ea585757a0e53c19788
-    inputAction: Attack.Light
-    triggerTag: combat.combo.branch
-    targetDefinition: {fileID: 11400000, guid: 017a72bf33424bd29d3d93e6c64c31c2, type: 2}
-    targetActionId: action.jump_attack
-    startFrame: 16
-    endFrame: 52
-    serverAuthoritative: 1
+  actionLinks: []

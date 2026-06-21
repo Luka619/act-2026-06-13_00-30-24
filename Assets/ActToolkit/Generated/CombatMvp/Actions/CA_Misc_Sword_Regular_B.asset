@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d10b25ed0533fd04ca4374d9595814a3, type: 3}
+  m_Name: CA_Misc_Sword_Regular_B
+  m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
+  clip: {fileID: 7400000, guid: 5070494b7c6c34c41a8fe48ab5af9cc0, type: 2}
+  actionId: action.misc.sword_regular_b
+  stateName: "\u8F7B\u51FB1 \u8D77\u624B"
+  authoringFrameRate: 60
+  requiresNetworkSync: 1
+  loopPreview: 0
+  rootMotionScale: 1
+  markers:
+  - id: d2a6e28c64384a8aa41f3ab8fdcc1301
+    kind: 0
+    normalizedTime: 0.53125
+    duration: 0.06666667
+    gameplayTag: combat.hitbox.light
+    payload: damage=10
+    localOffset: {x: 0, y: 0.95, z: 0.95}
+    size: {x: 1.1, y: 0.9, z: 1.15}
+    color: {r: 1, g: 0.55, b: 0.18, a: 0.75}
+    serverAuthoritative: 1
+  - id: b58a10e54e834f5b95f9c3f8071c8d21
+    kind: 11
+    normalizedTime: 0
+    duration: 0
+    gameplayTag: net.sync.action
+    payload: 
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  - id: a6f2c86a42d7404bb0d12014b4905a9c
+    kind: 4
+    normalizedTime: 0
+    duration: 0.43333334
+    gameplayTag: combat.movement.lock
+    payload: 
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  - id: cf94ee592e3f45309bd6a1ef1d5a72b0
+    kind: 6
+    normalizedTime: 0.375
+    duration: 0.2
+    gameplayTag: combat.combo.branch
+    payload: 
+    localOffset: {x: 0, y: 1, z: 0.8}
+    size: {x: 0.7, y: 0.8, z: 0.9}
+    color: {r: 1, g: 0.95, b: 0.25, a: 0.95}
+    serverAuthoritative: 1
+  actionLinks:
+  - id: 3c1d560b2f0e43b5b9ea6387effcbf57
+    inputAction: Attack.Light
+    triggerTag: combat.combo.branch
+    targetDefinition: {fileID: 11400000, guid: 97fd1720cbd4ffd47bd9212cdf6f1304, type: 2}
+    targetActionId: action.light_2
+    startFrame: 12
+    endFrame: 24
+    serverAuthoritative: 1

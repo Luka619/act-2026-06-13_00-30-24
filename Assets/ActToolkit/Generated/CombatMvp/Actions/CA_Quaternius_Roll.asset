@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
   clip: {fileID: -3253842769541063390, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.roll
-  stateName: Combat / Roll
+  stateName: "\u7FFB\u6EDA"
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0

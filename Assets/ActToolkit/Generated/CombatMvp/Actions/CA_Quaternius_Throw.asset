@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ActToolkit.CombatAnimationDefinition
   clip: {fileID: -7816163768055700239, guid: 96e1c0a5dffb2664e8eecfece293f217, type: 3}
   actionId: action.throw
-  stateName: Combat / Throw
+  stateName: "\u6295\u63B7"
   authoringFrameRate: 60
   requiresNetworkSync: 1
   loopPreview: 0

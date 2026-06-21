@@ -10,6 +10,7 @@ namespace ActToolkit
         public GameObject modelPrefab;
         public Avatar avatar;
         public AnimationClip idleClip;
+        public AnimationClip walkClip;
         public AnimationClip moveClip;
         public CombatActionDatabase comboTable;
 

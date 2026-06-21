@@ -817,9 +817,24 @@ namespace ActToolkit
             return Mathf.Max(0, Mathf.RoundToInt(duration * frameRate));
         }
 
+        public int DurationFrames(AnimationClip clip, int frameRate)
+        {
+            int frameCount = FrameCount(clip, frameRate);
+            if (frameCount <= 0)
+            {
+                return DurationFrames(frameRate);
+            }
+
+            int startFrame = StartFrame(clip, frameRate);
+            int maxDurationFrames = Mathf.Max(0, frameCount - startFrame);
+            return Mathf.Clamp(DurationFrames(frameRate), 0, maxDurationFrames);
+        }
+
         public int EndFrame(AnimationClip clip, int frameRate)
         {
-            return StartFrame(clip, frameRate) + DurationFrames(frameRate);
+            int frameCount = FrameCount(clip, frameRate);
+            int endFrame = StartFrame(clip, frameRate) + DurationFrames(clip, frameRate);
+            return frameCount <= 0 ? endFrame : Mathf.Clamp(endFrame, 0, frameCount);
         }
 
         public float TimeSeconds(AnimationClip clip)
@@ -830,6 +845,16 @@ namespace ActToolkit
             }
 
             return Mathf.Clamp01(normalizedTime) * clip.length;
+        }
+
+        private static int FrameCount(AnimationClip clip, int frameRate)
+        {
+            if (clip == null || frameRate <= 0)
+            {
+                return 0;
+            }
+
+            return Mathf.Max(1, Mathf.RoundToInt(clip.length * frameRate));
         }
     }
 
