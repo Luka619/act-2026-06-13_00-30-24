@@ -13,7 +13,7 @@ namespace ActToolkit.EditorTools
         private const string WalkClipName = "Armature|Walk_Loop";
         private const string MoveClipName = "Armature|Jog_Fwd_Loop";
 
-        [MenuItem("Act Toolkit/Diagnostics/Estimate Locomotion Stride Speeds")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Estimate Locomotion Stride Speeds", false, 424)]
         public static void EstimateLocomotionStrideSpeeds()
         {
             GameObject modelPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);

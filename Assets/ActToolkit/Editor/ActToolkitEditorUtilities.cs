@@ -102,6 +102,12 @@ namespace ActToolkit.EditorTools
                     return new Color(0.88f, 0.22f, 0.22f, 0.55f);
                 case BlockoutElementKind.NavMarker:
                     return new Color(0.20f, 0.76f, 0.86f, 1f);
+                case BlockoutElementKind.EnemySpawn:
+                    return new Color(0.88f, 0.50f, 0.24f, 1f);
+                case BlockoutElementKind.DummySpawn:
+                    return new Color(0.78f, 0.66f, 0.30f, 1f);
+                case BlockoutElementKind.CombatZone:
+                    return new Color(0.38f, 0.70f, 0.36f, 0.45f);
                 default:
                     return new Color(0.48f, 0.58f, 0.68f, 1f);
             }
@@ -145,5 +151,17 @@ namespace ActToolkit.EditorTools
             File.WriteAllText(fullPath, content);
             AssetDatabase.ImportAsset(path);
         }
+    }
+
+    internal static class ActToolkitMenu
+    {
+        public const string Root = "Act Toolkit";
+        public const string CharacterRoot = Root + "/Character";
+        public const string LevelRoot = Root + "/Level";
+        public const string PlaytestRoot = Root + "/Playtest";
+        public const string DiagnosticsRoot = Root + "/Diagnostics";
+
+        // One-off probes, repair jobs, and asset-mutation helpers live here.
+        public const string TempRoot = Root + "/Temp";
     }
 }

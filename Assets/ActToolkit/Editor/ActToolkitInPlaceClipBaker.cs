@@ -12,21 +12,21 @@ namespace ActToolkit.EditorTools
         private const float DriftThresholdMeters = 0.02f;
         private const int DefaultSampleRate = 60;
 
-        [MenuItem("Act Toolkit/Animation/Report Configured Body Drift")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Report Configured Body Drift", false, 423)]
         public static void ReportConfiguredBodyDrift()
         {
             BodyDriftReport report = BuildConfiguredBodyDriftReport();
             Debug.Log(report.ToLogText());
         }
 
-        [MenuItem("Act Toolkit/Animation/Create In-Place Copies For Drifted Definitions")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Bake/Create In-Place Copies For Drifted Definitions", false, 940)]
         public static void CreateInPlaceCopiesForDriftedDefinitions()
         {
             BodyDriftReport report = CreateInPlaceCopiesForConfiguredDefinitions(false);
             Debug.Log(report.ToLogText());
         }
 
-        [MenuItem("Act Toolkit/Animation/Rebuild Configured In-Place Clips")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Bake/Rebuild Configured In-Place Clips", false, 941)]
         public static void RebuildConfiguredInPlaceClips()
         {
             BodyDriftReport report = RebuildConfiguredInPlaceClips(false);

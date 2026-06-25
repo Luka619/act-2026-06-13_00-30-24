@@ -43,7 +43,7 @@ namespace ActToolkit.EditorTools
         private static readonly Color KeyLightColor = new Color(1f, 0.96f, 0.9f, 1f);
         private static readonly Color InstructionTextColor = new Color(0.70f, 0.88f, 1f, 1f);
 
-        [MenuItem("Tools/Act Toolkit/Open Combat Dummy MVP Scene")]
+        [MenuItem(ActToolkitMenu.PlaytestRoot + "/Open Combat Dummy MVP Scene", false, 100)]
         public static void OpenScene()
         {
             SceneAsset sceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
@@ -61,7 +61,7 @@ namespace ActToolkit.EditorTools
             EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
         }
 
-        [MenuItem("Tools/Act Toolkit/Create Combat Dummy MVP Scene")]
+        [MenuItem(ActToolkitMenu.PlaytestRoot + "/Create Combat Dummy MVP Scene", false, 101)]
         public static void CreateScene()
         {
             ActToolkitEditorUtilities.EnsureGeneratedFolders();

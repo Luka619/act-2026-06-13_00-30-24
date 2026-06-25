@@ -15,7 +15,10 @@ namespace ActToolkit
         Objective,
         TriggerVolume,
         KillZone,
-        NavMarker
+        NavMarker,
+        EnemySpawn,
+        DummySpawn,
+        CombatZone
     }
 
     [ExecuteAlways]
@@ -63,7 +66,10 @@ namespace ActToolkit
             Gizmos.matrix = transform.localToWorldMatrix;
             Gizmos.color = gizmoColor;
 
-            if (kind == BlockoutElementKind.SpawnPoint || kind == BlockoutElementKind.NavMarker)
+            if (kind == BlockoutElementKind.SpawnPoint
+                || kind == BlockoutElementKind.NavMarker
+                || kind == BlockoutElementKind.EnemySpawn
+                || kind == BlockoutElementKind.DummySpawn)
             {
                 Gizmos.DrawSphere(Vector3.zero, 0.35f);
                 Gizmos.DrawRay(Vector3.zero, Vector3.forward * 1.2f);

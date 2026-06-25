@@ -9,7 +9,7 @@ namespace ActToolkit.EditorTools
     {
         private const string PreviewClipFolder = "Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary2_Standard";
 
-        [MenuItem("Act Toolkit/Animation/Make Mannequin Test Clips In-Place")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Import/Make Mannequin Test Clips In-Place", false, 930)]
         public static void MakeMannequinTestClipsInPlace()
         {
             string[] modelGuids = AssetDatabase.FindAssets("t:Model", new[] { PreviewClipFolder });
@@ -27,7 +27,7 @@ namespace ActToolkit.EditorTools
             MakeImporterPathsRootXzInPlace(importerPaths, "mannequin test clips");
         }
 
-        [MenuItem("Act Toolkit/Animation/Make Configured Clips Root-XZ In-Place")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Import/Make Configured Clips Root-XZ In-Place", false, 931)]
         public static void MakeConfiguredClipsRootXzInPlace()
         {
             List<AnimationClip> configuredClips = CollectConfiguredClips();
@@ -44,7 +44,7 @@ namespace ActToolkit.EditorTools
             MakeImporterPathsRootXzInPlace(importerPaths, "configured clips");
         }
 
-        [MenuItem("Act Toolkit/Animation/Check Configured Clip Root-XZ Settings")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Check Configured Clip Root-XZ Settings", false, 421)]
         public static void CheckConfiguredClipRootXzSettings()
         {
             List<AnimationClip> configuredClips = CollectConfiguredClips();
@@ -104,7 +104,7 @@ namespace ActToolkit.EditorTools
                 + ".");
         }
 
-        [MenuItem("Act Toolkit/Animation/Make Selected Model Clips In-Place")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Import/Make Selected Model Clips In-Place", false, 932)]
         public static void MakeSelectedModelClipsInPlace()
         {
             Object[] selectedAssets = Selection.objects;
@@ -122,7 +122,7 @@ namespace ActToolkit.EditorTools
             MakeImporterPathsRootXzInPlace(importerPaths, "selected model clips");
         }
 
-        [MenuItem("Act Toolkit/Animation/Check Selected Model Clip Root-XZ Settings")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Check Selected Model Clip Root-XZ Settings", false, 422)]
         public static void CheckSelectedModelClipRootXzSettings()
         {
             Object[] selectedAssets = Selection.objects;
@@ -157,13 +157,13 @@ namespace ActToolkit.EditorTools
             Debug.Log(builder.ToString());
         }
 
-        [MenuItem("Act Toolkit/Animation/Make Selected Model Clips In-Place", true)]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Import/Make Selected Model Clips In-Place", true)]
         private static bool ValidateMakeSelectedModelClipsInPlace()
         {
             return HasSelectedModelImporter();
         }
 
-        [MenuItem("Act Toolkit/Animation/Check Selected Model Clip Root-XZ Settings", true)]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Check Selected Model Clip Root-XZ Settings", true)]
         private static bool ValidateCheckSelectedModelClipRootXzSettings()
         {
             return HasSelectedModelImporter();

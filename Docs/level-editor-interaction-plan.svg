@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100">
+  <defs>
+    <style>
+      .bg { fill: #202326; }
+      .panel { fill: #2e3236; stroke: #4a5158; stroke-width: 2; }
+      .panel2 { fill: #272b30; stroke: #3f474f; stroke-width: 2; }
+      .scene { fill: #24282c; stroke: #607080; stroke-width: 3; }
+      .grid { stroke: #3a4148; stroke-width: 1; }
+      .grid2 { stroke: #46505a; stroke-width: 1.5; }
+      .text { fill: #e8eef4; font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .muted { fill: #aeb7c0; font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .small { font-size: 18px; }
+      .body { font-size: 22px; }
+      .label { font-size: 24px; font-weight: 600; }
+      .title { font-size: 38px; font-weight: 700; }
+      .chip { fill: #3b4249; stroke: #5c6670; stroke-width: 1.5; }
+      .chipHot { fill: #355676; stroke: #6da7df; stroke-width: 2; }
+      .accent { fill: #65a9e8; }
+      .green { fill: #6fc789; }
+      .yellow { fill: #e5bd54; }
+      .orange { fill: #d48651; }
+      .red { fill: #d96363; }
+      .line { stroke: #77b7ef; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .softLine { stroke: #8d98a4; stroke-width: 2; fill: none; stroke-dasharray: 8 8; }
+      .dangerLine { stroke: #d96363; stroke-width: 3; fill: none; marker-end: url(#arrowRed); }
+      .okLine { stroke: #6fc789; stroke-width: 3; fill: none; marker-end: url(#arrowGreen); }
+      .handle { fill: #78b7f0; stroke: #d9edf8; stroke-width: 2; }
+      .block { fill: #4f6f86; stroke: #95cdf8; stroke-width: 3; }
+      .ghost { fill: #65a9e8; fill-opacity: 0.18; stroke: #65a9e8; stroke-width: 3; stroke-dasharray: 10 8; }
+      .menu { fill: #333941; stroke: #83909d; stroke-width: 2; }
+      .shadow { filter: drop-shadow(0 8px 18px rgba(0,0,0,0.35)); }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#77b7ef"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#6fc789"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#d96363"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1100"/>
+
+  <text class="text title" x="56" y="70">关卡编辑器交互规划：Level Workspace</text>
+  <text class="muted body" x="56" y="108">目标：主画布直接编辑，资源和参数在两侧，不让用户在按钮、页签和 Scene 临时物之间来回猜。</text>
+
+  <!-- Mental model -->
+  <rect class="panel" x="56" y="140" width="1488" height="84" rx="8"/>
+  <text class="text label" x="84" y="174">核心心智模型</text>
+  <text class="muted body" x="84" y="205">选关卡 -> 在 Scene 画布摆白模 -> 选中对象 -> 右侧改参数 -> 一键进入 Playtest 验证</text>
+  <path class="okLine" d="M438 184 H512"/>
+  <path class="okLine" d="M725 184 H800"/>
+  <path class="okLine" d="M990 184 H1064"/>
+  <path class="okLine" d="M1238 184 H1312"/>
+
+  <!-- App frame -->
+  <rect class="panel shadow" x="56" y="260" width="1488" height="760" rx="10"/>
+  <rect class="panel2" x="56" y="260" width="1488" height="66" rx="10"/>
+  <text class="text label" x="84" y="302">Level Workspace</text>
+
+  <!-- top command bar -->
+  <rect class="chipHot" x="312" y="276" width="190" height="34" rx="5"/>
+  <text class="text small" x="332" y="300">Blockout_Arena_01</text>
+  <rect class="chip" x="520" y="276" width="82" height="34" rx="5"/>
+  <text class="text small" x="545" y="300">Save</text>
+  <rect class="chip" x="614" y="276" width="104" height="34" rx="5"/>
+  <text class="text small" x="641" y="300">Open</text>
+  <rect class="chip" x="730" y="276" width="116" height="34" rx="5"/>
+  <text class="text small" x="756" y="300">Playtest</text>
+  <rect class="chip" x="858" y="276" width="122" height="34" rx="5"/>
+  <text class="text small" x="887" y="300">Export</text>
+  <text class="muted small" x="1190" y="299">Grid 1m | Snap On | Brush: Wall</text>
+
+  <!-- left panel -->
+  <rect class="panel2" x="76" y="350" width="300" height="620" rx="8"/>
+  <text class="text label" x="100" y="386">关卡和白模库</text>
+  <text class="muted small" x="100" y="417">关卡列表只负责进入关卡，不混入编辑参数</text>
+
+  <rect class="chipHot" x="100" y="440" width="238" height="42" rx="5"/>
+  <text class="text small" x="122" y="468">Blockout_Arena_01</text>
+  <rect class="chip" x="100" y="492" width="238" height="42" rx="5"/>
+  <text class="muted small" x="122" y="520">Combat_Test_Yard</text>
+  <rect class="chip" x="100" y="544" width="112" height="36" rx="5"/>
+  <text class="text small" x="124" y="568">New</text>
+  <rect class="chip" x="226" y="544" width="112" height="36" rx="5"/>
+  <text class="text small" x="248" y="568">Duplicate</text>
+
+  <text class="text label" x="100" y="628">Brush Palette</text>
+  <rect class="chipHot" x="100" y="652" width="108" height="42" rx="5"/>
+  <text class="text small" x="128" y="679">Wall</text>
+  <rect class="chip" x="222" y="652" width="108" height="42" rx="5"/>
+  <text class="text small" x="246" y="679">Floor</text>
+  <rect class="chip" x="100" y="706" width="108" height="42" rx="5"/>
+  <text class="text small" x="124" y="733">Ramp</text>
+  <rect class="chip" x="222" y="706" width="108" height="42" rx="5"/>
+  <text class="text small" x="238" y="733">Cover</text>
+  <rect class="chip" x="100" y="760" width="108" height="42" rx="5"/>
+  <text class="text small" x="114" y="787">Spawn</text>
+  <rect class="chip" x="222" y="760" width="108" height="42" rx="5"/>
+  <text class="text small" x="238" y="787">Trigger</text>
+
+  <text class="muted small" x="100" y="856">拖拽 Brush 到画布：直接创建</text>
+  <text class="muted small" x="100" y="886">数字键 1-6：快速切 Brush</text>
+  <text class="muted small" x="100" y="916">Q/W/E/R：选择、移动、旋转、缩放</text>
+
+  <!-- central scene canvas -->
+  <rect class="scene" x="404" y="350" width="768" height="620" rx="8"/>
+  <text class="text label" x="428" y="386">Scene Canvas：主要操作区域</text>
+  <text class="muted small" x="428" y="416">所有创建、选择、移动、缩放都应该在这里完成；工具窗口只显示上下文。</text>
+
+  <!-- grid -->
+  <g>
+    <line class="grid" x1="424" y1="466" x2="1152" y2="466"/>
+    <line class="grid" x1="424" y1="516" x2="1152" y2="516"/>
+    <line class="grid2" x1="424" y1="566" x2="1152" y2="566"/>
+    <line class="grid" x1="424" y1="616" x2="1152" y2="616"/>
+    <line class="grid" x1="424" y1="666" x2="1152" y2="666"/>
+    <line class="grid2" x1="424" y1="716" x2="1152" y2="716"/>
+    <line class="grid" x1="424" y1="766" x2="1152" y2="766"/>
+    <line class="grid" x1="424" y1="816" x2="1152" y2="816"/>
+    <line class="grid2" x1="424" y1="866" x2="1152" y2="866"/>
+
+    <line class="grid" x1="474" y1="446" x2="474" y2="910"/>
+    <line class="grid" x1="524" y1="446" x2="524" y2="910"/>
+    <line class="grid2" x1="574" y1="446" x2="574" y2="910"/>
+    <line class="grid" x1="624" y1="446" x2="624" y2="910"/>
+    <line class="grid" x1="674" y1="446" x2="674" y2="910"/>
+    <line class="grid2" x1="724" y1="446" x2="724" y2="910"/>
+    <line class="grid" x1="774" y1="446" x2="774" y2="910"/>
+    <line class="grid" x1="824" y1="446" x2="824" y2="910"/>
+    <line class="grid2" x1="874" y1="446" x2="874" y2="910"/>
+    <line class="grid" x1="924" y1="446" x2="924" y2="910"/>
+    <line class="grid" x1="974" y1="446" x2="974" y2="910"/>
+    <line class="grid2" x1="1024" y1="446" x2="1024" y2="910"/>
+    <line class="grid" x1="1074" y1="446" x2="1074" y2="910"/>
+    <line class="grid" x1="1124" y1="446" x2="1124" y2="910"/>
+  </g>
+
+  <!-- blocks and ghost -->
+  <rect class="block" x="602" y="532" width="168" height="74" rx="2"/>
+  <text class="text small" x="635" y="576">Wall_01</text>
+  <circle class="handle" cx="602" cy="569" r="8"/>
+  <circle class="handle" cx="770" cy="569" r="8"/>
+  <circle class="handle" cx="686" cy="532" r="8"/>
+  <circle class="handle" cx="686" cy="606" r="8"/>
+
+  <rect class="ghost" x="830" y="656" width="150" height="88" rx="2"/>
+  <text class="accent small" x="852" y="704">Ghost Preview</text>
+
+  <rect fill="#6fc789" stroke="#b9f0c8" stroke-width="3" x="498" y="744" width="42" height="42" rx="21"/>
+  <text class="text small" x="462" y="806">Spawn</text>
+
+  <rect fill="#d48651" stroke="#ffd0aa" stroke-width="3" x="1006" y="526" width="92" height="58" rx="2"/>
+  <text class="text small" x="1024" y="562">Cover</text>
+
+  <!-- right-click menu -->
+  <rect class="menu shadow" x="880" y="448" width="250" height="178" rx="6"/>
+  <text class="text small" x="900" y="480">右键菜单</text>
+  <line x1="896" y1="492" x2="1116" y2="492" stroke="#59636e"/>
+  <text class="muted small" x="900" y="522">Create Here: Wall</text>
+  <text class="muted small" x="900" y="552">Duplicate Selected</text>
+  <text class="muted small" x="900" y="582">Convert To...</text>
+  <text class="muted small" x="900" y="612">Delete Selected</text>
+
+  <!-- scene interaction notes -->
+  <rect class="chip" x="428" y="930" width="720" height="28" rx="4"/>
+  <text class="muted small" x="446" y="951">LMB 选中/拖拽 | 空地 LMB 创建 | RMB 上下文 | MMB 平移视角 | Alt 保留 Unity 相机操作</text>
+
+  <!-- right inspector -->
+  <rect class="panel2" x="1200" y="350" width="320" height="620" rx="8"/>
+  <text class="text label" x="1224" y="386">选中对象 Inspector</text>
+  <text class="muted small" x="1224" y="417">只显示当前选中物体，不再堆全局按钮</text>
+
+  <text class="muted small" x="1224" y="470">Name</text>
+  <rect class="chipHot" x="1224" y="482" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="507">Wall_01</text>
+
+  <text class="muted small" x="1224" y="554">Type</text>
+  <rect class="chip" x="1224" y="566" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="591">Wall</text>
+
+  <text class="muted small" x="1224" y="638">Transform</text>
+  <rect class="chip" x="1224" y="650" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="675">Pos  6, 0, 3</text>
+  <rect class="chip" x="1224" y="696" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="721">Size  4, 2, 1</text>
+
+  <text class="muted small" x="1224" y="768">Gameplay</text>
+  <rect class="chip" x="1224" y="780" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="805">Tag: arena.wall</text>
+  <rect class="chip" x="1224" y="826" width="250" height="38" rx="5"/>
+  <text class="text small" x="1242" y="851">Collision: Server</text>
+
+  <rect class="chip" x="1224" y="904" width="116" height="38" rx="5"/>
+  <text class="text small" x="1251" y="929">Frame</text>
+  <rect class="chip" x="1358" y="904" width="116" height="38" rx="5"/>
+  <text class="text small" x="1384" y="929">Delete</text>
+
+  <!-- interaction grammar cards -->
+  <rect class="panel" x="56" y="1040" width="1488" height="0" opacity="0"/>
+
+  <rect class="panel2" x="56" y="1034" width="350" height="50" rx="8"/>
+  <circle class="accent" cx="82" cy="1059" r="9"/>
+  <text class="text small" x="104" y="1066">拖拽优先：物体能在 Scene 里直接被拿起来</text>
+
+  <rect class="panel2" x="430" y="1034" width="350" height="50" rx="8"/>
+  <circle class="yellow" cx="456" cy="1059" r="9"/>
+  <text class="text small" x="478" y="1066">右键优先：上下文动作就在鼠标位置出现</text>
+
+  <rect class="panel2" x="804" y="1034" width="350" height="50" rx="8"/>
+  <circle class="green" cx="830" cy="1059" r="9"/>
+  <text class="text small" x="852" y="1066">中键优先：保留 Scene 视图平移，不抢相机习惯</text>
+
+  <rect class="panel2" x="1178" y="1034" width="366" height="50" rx="8"/>
+  <circle class="red" cx="1204" cy="1059" r="9"/>
+  <text class="text small" x="1226" y="1066">状态可见：Grid、Snap、Brush、Selection 永远可见</text>
+
+  <!-- callout arrows -->
+  <path class="line" d="M340 684 C430 650, 500 620, 602 570"/>
+  <text class="accent small" x="396" y="646">拖 Brush 入场景</text>
+
+  <path class="line" d="M780 568 C842 520, 850 500, 880 492"/>
+  <text class="accent small" x="766" y="510">右键对象/空地</text>
+
+  <path class="line" d="M770 606 C900 696, 1060 738, 1200 706"/>
+  <text class="accent small" x="970" y="748">选中后右侧只改这个对象</text>
+</svg>

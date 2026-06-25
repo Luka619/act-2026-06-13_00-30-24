@@ -33,6 +33,25 @@ namespace ActToolkit
         private float resetTimer = -1f;
         private MaterialPropertyBlock propertyBlock;
 
+        public void ConfigureForPlaytest(Transform textAnchor, TextMesh targetHealthText, Renderer[] targetRenderers)
+        {
+            floatingTextAnchor = textAnchor;
+            healthText = targetHealthText;
+            flashRenderers = targetRenderers;
+
+            if (propertyBlock == null)
+            {
+                propertyBlock = new MaterialPropertyBlock();
+            }
+
+            if (Application.isPlaying)
+            {
+                health = maxHealth;
+                UpdateHealthText();
+                ApplyColor(normalColor);
+            }
+        }
+
         private void Awake()
         {
             health = maxHealth;

@@ -33,7 +33,7 @@ namespace ActToolkit.EditorTools
             EditorApplication.delayCall += AuditConfiguredAnimationCompatibility;
         }
 
-        [MenuItem("Act Toolkit/Audit Configured Animation Compatibility")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Animation/Audit Configured Animation Compatibility", false, 420)]
         public static void AuditConfiguredAnimationCompatibility()
         {
             string report = BuildReport();
@@ -41,7 +41,7 @@ namespace ActToolkit.EditorTools
             Debug.Log("[ActToolkit] Configured animation compatibility audit written to " + Path.GetFullPath(ReportPath) + "\n" + report);
         }
 
-        [MenuItem("Act Toolkit/Repair Configured Animation Compatibility")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Animation Repair/Repair Configured Animation Compatibility", false, 920)]
         public static void RepairConfiguredAnimationsAndAudit()
         {
             int changed = RepairConfiguredAnimations();

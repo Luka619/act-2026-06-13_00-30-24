@@ -135,6 +135,59 @@ namespace ActToolkit
         public bool IsAttacking => currentAction != null;
         public bool IsMovementLocked => currentAction != null && HasActiveMarker(CombatAnimationEventKind.MovementLock);
 
+        public void ConfigureForPlaytest(
+            CharacterActionProfile profile,
+            PlayerCombatGamepadInput inputComponent,
+            CharacterController controller,
+            Camera camera,
+            Animator targetAnimator,
+            Avatar avatarOverride)
+        {
+            characterProfile = profile;
+            input = inputComponent;
+            characterController = controller;
+            gameplayCamera = camera;
+            animator = targetAnimator;
+
+            if (avatarOverride != null)
+            {
+                fallbackAvatar = avatarOverride;
+            }
+
+            ApplyCharacterProfile();
+
+            if (animator != null)
+            {
+                if (animator.avatar == null && fallbackAvatar != null)
+                {
+                    animator.avatar = fallbackAvatar;
+                }
+
+                animator.enabled = true;
+                animator.applyRootMotion = false;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            }
+
+            if (graphReady && graph.IsValid())
+            {
+                graph.Destroy();
+                graphReady = false;
+                currentPlayable = default;
+                locomotionMixer = default;
+                idlePlayable = default;
+                walkPlayable = default;
+                movePlayable = default;
+                returnTransitionMixer = default;
+                currentClip = null;
+            }
+
+            if (isActiveAndEnabled)
+            {
+                EnsureGraph();
+                PlayLocomotionClip(true, 0f);
+            }
+        }
+
         private void Awake()
         {
             ApplyCharacterProfile();

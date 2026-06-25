@@ -13,7 +13,7 @@ namespace ActToolkit.EditorTools
         private const string MannequinModelPath = "Assets/External/TestAssets/Characters/Quaternius_UniversalAnimationLibrary2_Standard/Mannequin_F.fbx";
         private const string Ual1Path = "Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary_Standard/UAL1_Standard.fbx";
 
-        [MenuItem("Act Toolkit/Probe UAL1 Locomotion Clips")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Probe UAL1 Locomotion Clips", false, 910)]
         public static void ProbeUal1LocomotionClips()
         {
             ActToolkitSkeletonCompatibility.ClearCache();

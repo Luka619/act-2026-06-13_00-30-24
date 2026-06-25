@@ -19,7 +19,7 @@ namespace ActToolkit.EditorTools
             new TestAssetSource("Khronos glTF Sample Models GitHub", "https://github.com/KhronosGroup/glTF-Sample-Models", "Varies by model", "Raw sample-model repository. The Fox sample has Survey, Walk, and Run cycles for animation playback checks.")
         };
 
-        [MenuItem("Tools/Act Toolkit/Testing Asset Sources")]
+        [MenuItem(ActToolkitMenu.TempRoot + "/Testing Asset Sources", false, 900)]
         public static void Open()
         {
             TestingAssetResourceWindow window = GetWindow<TestingAssetResourceWindow>();

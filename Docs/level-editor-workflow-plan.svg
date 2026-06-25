@@ -1,0 +1,288 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280">
+  <defs>
+    <style>
+      .bg { fill: #1f2327; }
+      .panel { fill: #2e3338; stroke: #515b65; stroke-width: 2; }
+      .panel2 { fill: #282d32; stroke: #454e57; stroke-width: 2; }
+      .panel3 { fill: #24292e; stroke: #3c454e; stroke-width: 2; }
+      .scene { fill: #252a30; stroke: #6a7a89; stroke-width: 3; }
+      .text { fill: #edf3f8; font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .muted { fill: #aab5bf; font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .dim { fill: #82909d; font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .title { font-size: 40px; font-weight: 700; }
+      .h1 { font-size: 28px; font-weight: 700; }
+      .h2 { font-size: 22px; font-weight: 700; }
+      .body { font-size: 20px; }
+      .small { font-size: 17px; }
+      .tiny { font-size: 14px; }
+      .chip { fill: #3a4148; stroke: #5d6873; stroke-width: 1.5; }
+      .chipOn { fill: #315a7d; stroke: #74b7ee; stroke-width: 2; }
+      .chipGreen { fill: #335b45; stroke: #78d49a; stroke-width: 2; }
+      .chipYellow { fill: #61522a; stroke: #e3c464; stroke-width: 2; }
+      .chipRed { fill: #633838; stroke: #e27676; stroke-width: 2; }
+      .blue { fill: #68aeea; }
+      .green { fill: #72cc8d; }
+      .yellow { fill: #e3c464; }
+      .orange { fill: #d38a55; }
+      .red { fill: #db6868; }
+      .purple { fill: #9b8eed; }
+      .grid { stroke: #384047; stroke-width: 1; }
+      .grid2 { stroke: #46505a; stroke-width: 1.5; }
+      .line { stroke: #78b7ef; stroke-width: 3; fill: none; marker-end: url(#arrowBlue); }
+      .lineGreen { stroke: #72cc8d; stroke-width: 3; fill: none; marker-end: url(#arrowGreen); }
+      .lineYellow { stroke: #e3c464; stroke-width: 3; fill: none; marker-end: url(#arrowYellow); }
+      .lineRed { stroke: #db6868; stroke-width: 3; fill: none; marker-end: url(#arrowRed); }
+      .dash { stroke: #8b98a5; stroke-width: 2; fill: none; stroke-dasharray: 8 8; }
+      .block { fill: #4e7087; stroke: #9cd3fb; stroke-width: 3; }
+      .wall { fill: #4d5964; stroke: #b7c6d4; stroke-width: 3; }
+      .trigger { fill: #8e69dd; fill-opacity: 0.24; stroke: #aa98fb; stroke-width: 3; stroke-dasharray: 10 8; }
+      .spawn { fill: #59bd77; stroke: #bdedcb; stroke-width: 3; }
+      .enemy { fill: #d98b52; stroke: #ffd2aa; stroke-width: 3; }
+      .hazard { fill: #ca5d5d; stroke: #ffabab; stroke-width: 3; }
+      .handle { fill: #7fbcf0; stroke: #e2f4ff; stroke-width: 2; }
+      .shadow { filter: drop-shadow(0 10px 20px rgba(0,0,0,0.38)); }
+    </style>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#78b7ef"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#72cc8d"/>
+    </marker>
+    <marker id="arrowYellow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#e3c464"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#db6868"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="1280"/>
+
+  <text class="text title" x="56" y="68">关卡编辑器交互规划 v2：从白模工具升级为 Level Workspace</text>
+  <text class="muted body" x="56" y="106">核心原则：关卡制作不是“摆方块”，而是从玩法目标到可测试关卡的闭环。Scene 是主画布，左右面板只服务当前模式和当前选择。</text>
+
+  <!-- workflow strip -->
+  <rect class="panel shadow" x="56" y="136" width="1688" height="132" rx="10"/>
+  <text class="text h1" x="84" y="176">完整制作流程</text>
+
+  <rect class="chipOn" x="86" y="202" width="260" height="42" rx="6"/>
+  <text class="text body" x="116" y="230">1 Level Browser</text>
+  <path class="line" d="M350 223 H414"/>
+  <rect class="chip" x="424" y="202" width="238" height="42" rx="6"/>
+  <text class="text body" x="462" y="230">2 Blockout</text>
+  <path class="line" d="M666 223 H730"/>
+  <rect class="chip" x="740" y="202" width="256" height="42" rx="6"/>
+  <text class="text body" x="770" y="230">3 Gameplay Markers</text>
+  <path class="line" d="M1000 223 H1064"/>
+  <rect class="chip" x="1074" y="202" width="262" height="42" rx="6"/>
+  <text class="text body" x="1106" y="230">4 Validate + Playtest</text>
+  <path class="line" d="M1340 223 H1404"/>
+  <rect class="chip" x="1414" y="202" width="246" height="42" rx="6"/>
+  <text class="text body" x="1458" y="230">5 Export Runtime</text>
+
+  <text class="dim small" x="84" y="256">这五步需要在一个窗口里流动，不应该是几个彼此不知道状态的按钮。</text>
+
+  <!-- main app frame -->
+  <rect class="panel shadow" x="56" y="300" width="1688" height="890" rx="12"/>
+  <rect class="panel2" x="56" y="300" width="1688" height="70" rx="12"/>
+  <text class="text h1" x="84" y="344">Level Workspace</text>
+
+  <!-- top mode bar -->
+  <rect class="chipOn" x="330" y="318" width="118" height="34" rx="5"/>
+  <text class="text small" x="360" y="341">Level</text>
+  <rect class="chip" x="458" y="318" width="136" height="34" rx="5"/>
+  <text class="text small" x="488" y="341">Blockout</text>
+  <rect class="chip" x="604" y="318" width="148" height="34" rx="5"/>
+  <text class="text small" x="632" y="341">Gameplay</text>
+  <rect class="chip" x="762" y="318" width="132" height="34" rx="5"/>
+  <text class="text small" x="790" y="341">Validate</text>
+  <rect class="chipGreen" x="904" y="318" width="132" height="34" rx="5"/>
+  <text class="text small" x="934" y="341">Playtest</text>
+  <rect class="chip" x="1046" y="318" width="104" height="34" rx="5"/>
+  <text class="text small" x="1074" y="341">Export</text>
+  <text class="muted small" x="1282" y="341">Blockout_Arena_01 | Grid 1m | Snap On | Dirty</text>
+
+  <!-- left contextual panel -->
+  <rect class="panel2" x="76" y="394" width="330" height="760" rx="8"/>
+  <text class="text h1" x="102" y="432">左侧：模式面板</text>
+  <text class="muted small" x="102" y="462">当前模式决定左侧内容，不再所有功能堆一起。</text>
+
+  <rect class="panel3" x="100" y="492" width="282" height="152" rx="8"/>
+  <text class="blue h2" x="120" y="524">Level Browser</text>
+  <text class="muted small" x="120" y="556">关卡列表 / 模板 / 复制 / 重命名</text>
+  <rect class="chipOn" x="120" y="576" width="236" height="34" rx="5"/>
+  <text class="text small" x="136" y="599">Arena_01  playable</text>
+  <rect class="chip" x="120" y="616" width="108" height="28" rx="5"/>
+  <text class="text tiny" x="146" y="635">New</text>
+  <rect class="chip" x="248" y="616" width="108" height="28" rx="5"/>
+  <text class="text tiny" x="274" y="635">Clone</text>
+
+  <rect class="panel3" x="100" y="666" width="282" height="172" rx="8"/>
+  <text class="green h2" x="120" y="698">Blockout Palette</text>
+  <text class="muted small" x="120" y="730">几何体 Brush / Prefab / 分组工具</text>
+  <rect class="chipOn" x="120" y="750" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="140" y="771">Wall</text>
+  <rect class="chip" x="204" y="750" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="224" y="771">Floor</text>
+  <rect class="chip" x="288" y="750" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="310" y="771">Ramp</text>
+  <rect class="chip" x="120" y="792" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="136" y="813">Cover</text>
+  <rect class="chip" x="204" y="792" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="224" y="813">Stair</text>
+  <rect class="chip" x="288" y="792" width="74" height="32" rx="5"/>
+  <text class="text tiny" x="308" y="813">Pillar</text>
+
+  <rect class="panel3" x="100" y="860" width="282" height="184" rx="8"/>
+  <text class="yellow h2" x="120" y="892">Gameplay Palette</text>
+  <text class="muted small" x="120" y="924">出生点 / 敌人点 / 触发器 / 区域</text>
+  <rect class="chipGreen" x="120" y="944" width="104" height="32" rx="5"/>
+  <text class="text tiny" x="142" y="965">Player</text>
+  <rect class="chip" x="238" y="944" width="124" height="32" rx="5"/>
+  <text class="text tiny" x="258" y="965">Enemy</text>
+  <rect class="chip" x="120" y="986" width="104" height="32" rx="5"/>
+  <text class="text tiny" x="142" y="1007">Trigger</text>
+  <rect class="chip" x="238" y="986" width="124" height="32" rx="5"/>
+  <text class="text tiny" x="258" y="1007">Combat Zone</text>
+  <text class="dim tiny" x="120" y="1034">模式切到 Gameplay 时，这里替换 Blockout Palette。</text>
+
+  <rect class="chip" x="100" y="1076" width="282" height="42" rx="6"/>
+  <text class="text small" x="126" y="1103">Layer Toggles: Geo / Markers / Nav</text>
+
+  <!-- central scene -->
+  <rect class="scene" x="430" y="394" width="866" height="760" rx="8"/>
+  <text class="text h1" x="460" y="432">中间：Scene 主画布</text>
+  <text class="muted small" x="460" y="462">80% 操作在画布完成：放置、选择、拖拽、复制、框选、吸附、右键上下文。</text>
+
+  <!-- scene toolbar -->
+  <rect class="chipOn" x="460" y="488" width="86" height="30" rx="5"/>
+  <text class="text tiny" x="482" y="508">Select</text>
+  <rect class="chip" x="556" y="488" width="86" height="30" rx="5"/>
+  <text class="text tiny" x="582" y="508">Move</text>
+  <rect class="chip" x="652" y="488" width="86" height="30" rx="5"/>
+  <text class="text tiny" x="674" y="508">Rotate</text>
+  <rect class="chip" x="748" y="488" width="86" height="30" rx="5"/>
+  <text class="text tiny" x="774" y="508">Scale</text>
+  <rect class="chip" x="844" y="488" width="120" height="30" rx="5"/>
+  <text class="text tiny" x="866" y="508">Array Copy</text>
+  <rect class="chip" x="974" y="488" width="108" height="30" rx="5"/>
+  <text class="text tiny" x="996" y="508">Align</text>
+  <rect class="chipYellow" x="1092" y="488" width="146" height="30" rx="5"/>
+  <text class="text tiny" x="1114" y="508">Warnings: 2</text>
+
+  <!-- grid -->
+  <g>
+    <line class="grid" x1="462" y1="574" x2="1264" y2="574"/>
+    <line class="grid" x1="462" y1="624" x2="1264" y2="624"/>
+    <line class="grid2" x1="462" y1="674" x2="1264" y2="674"/>
+    <line class="grid" x1="462" y1="724" x2="1264" y2="724"/>
+    <line class="grid" x1="462" y1="774" x2="1264" y2="774"/>
+    <line class="grid2" x1="462" y1="824" x2="1264" y2="824"/>
+    <line class="grid" x1="462" y1="874" x2="1264" y2="874"/>
+    <line class="grid" x1="462" y1="924" x2="1264" y2="924"/>
+    <line class="grid2" x1="462" y1="974" x2="1264" y2="974"/>
+    <line class="grid" x1="462" y1="1024" x2="1264" y2="1024"/>
+
+    <line class="grid" x1="512" y1="544" x2="512" y2="1074"/>
+    <line class="grid" x1="562" y1="544" x2="562" y2="1074"/>
+    <line class="grid2" x1="612" y1="544" x2="612" y2="1074"/>
+    <line class="grid" x1="662" y1="544" x2="662" y2="1074"/>
+    <line class="grid" x1="712" y1="544" x2="712" y2="1074"/>
+    <line class="grid2" x1="762" y1="544" x2="762" y2="1074"/>
+    <line class="grid" x1="812" y1="544" x2="812" y2="1074"/>
+    <line class="grid" x1="862" y1="544" x2="862" y2="1074"/>
+    <line class="grid2" x1="912" y1="544" x2="912" y2="1074"/>
+    <line class="grid" x1="962" y1="544" x2="962" y2="1074"/>
+    <line class="grid" x1="1012" y1="544" x2="1012" y2="1074"/>
+    <line class="grid2" x1="1062" y1="544" x2="1062" y2="1074"/>
+    <line class="grid" x1="1112" y1="544" x2="1112" y2="1074"/>
+    <line class="grid" x1="1162" y1="544" x2="1162" y2="1074"/>
+    <line class="grid2" x1="1212" y1="544" x2="1212" y2="1074"/>
+  </g>
+
+  <!-- placed content -->
+  <rect class="wall" x="566" y="640" width="210" height="66" rx="2"/>
+  <text class="text small" x="622" y="680">Wall_01</text>
+  <circle class="handle" cx="566" cy="673" r="8"/>
+  <circle class="handle" cx="776" cy="673" r="8"/>
+  <circle class="handle" cx="671" cy="640" r="8"/>
+  <circle class="handle" cx="671" cy="706" r="8"/>
+
+  <rect class="block" x="896" y="678" width="156" height="96" rx="2"/>
+  <text class="text small" x="930" y="732">Cover</text>
+
+  <rect class="trigger" x="690" y="804" width="320" height="178" rx="8"/>
+  <text class="text small" x="764" y="894">Combat Zone Trigger</text>
+
+  <circle class="spawn" cx="552" cy="904" r="26"/>
+  <path d="M552 904 L552 860" stroke="#bdedcb" stroke-width="4"/>
+  <text class="text small" x="488" y="950">Player Spawn</text>
+
+  <rect class="enemy" x="1068" y="610" width="62" height="62" rx="31"/>
+  <text class="text tiny" x="1050" y="692">Enemy Dummy</text>
+
+  <rect class="hazard" x="1090" y="930" width="116" height="44" rx="2"/>
+  <text class="text tiny" x="1116" y="958">Kill Zone</text>
+
+  <!-- right click menu in scene -->
+  <rect class="panel shadow" x="1018" y="764" width="236" height="178" rx="6"/>
+  <text class="text small" x="1038" y="795">RMB Context</text>
+  <line x1="1038" y1="810" x2="1234" y2="810" stroke="#66717c"/>
+  <text class="muted small" x="1038" y="838">Create Brush Here</text>
+  <text class="muted small" x="1038" y="868">Duplicate Selected</text>
+  <text class="muted small" x="1038" y="898">Convert To...</text>
+  <text class="muted small" x="1038" y="928">Add Gameplay Marker</text>
+
+  <!-- bottom HUD -->
+  <rect class="chip" x="460" y="1096" width="802" height="34" rx="5"/>
+  <text class="muted small" x="482" y="1119">LMB 选/拖 | Empty LMB 放置 | RMB 上下文 | Shift 约束轴 | Ctrl 拖拽复制 | Alt 保留 Unity 相机</text>
+
+  <!-- right inspector / validate -->
+  <rect class="panel2" x="1320" y="394" width="396" height="760" rx="8"/>
+  <text class="text h1" x="1346" y="432">右侧：Selection / Validate</text>
+  <text class="muted small" x="1346" y="462">默认显示选中对象；切 Validate 后显示问题列表和一键定位。</text>
+
+  <rect class="panel3" x="1346" y="492" width="344" height="276" rx="8"/>
+  <text class="blue h2" x="1368" y="526">Selected: Wall_01</text>
+  <text class="muted small" x="1368" y="560">Name</text>
+  <rect class="chipOn" x="1368" y="572" width="292" height="34" rx="5"/>
+  <text class="text small" x="1386" y="595">Wall_01</text>
+  <text class="muted small" x="1368" y="632">Transform</text>
+  <rect class="chip" x="1368" y="644" width="140" height="32" rx="5"/>
+  <text class="text tiny" x="1384" y="665">Pos 4,0,2</text>
+  <rect class="chip" x="1520" y="644" width="140" height="32" rx="5"/>
+  <text class="text tiny" x="1536" y="665">Size 4,2,1</text>
+  <text class="muted small" x="1368" y="708">Gameplay Tag</text>
+  <rect class="chip" x="1368" y="720" width="292" height="32" rx="5"/>
+  <text class="text tiny" x="1384" y="741">arena.wall.outer</text>
+
+  <rect class="panel3" x="1346" y="790" width="344" height="224" rx="8"/>
+  <text class="yellow h2" x="1368" y="824">Validation</text>
+  <rect class="chipRed" x="1368" y="848" width="292" height="34" rx="5"/>
+  <text class="text tiny" x="1384" y="870">Missing enemy spawn in combat zone</text>
+  <rect class="chipYellow" x="1368" y="892" width="292" height="34" rx="5"/>
+  <text class="text tiny" x="1384" y="914">Wall_03 floating 0.3m</text>
+  <rect class="chipGreen" x="1368" y="936" width="140" height="34" rx="5"/>
+  <text class="text tiny" x="1394" y="958">Run Check</text>
+  <rect class="chip" x="1520" y="936" width="140" height="34" rx="5"/>
+  <text class="text tiny" x="1548" y="958">Focus Issue</text>
+  <text class="dim tiny" x="1368" y="998">点击问题后，Scene 聚焦到对应对象/区域。</text>
+
+  <rect class="panel3" x="1346" y="1036" width="344" height="86" rx="8"/>
+  <text class="green h2" x="1368" y="1070">Playtest Snapshot</text>
+  <text class="muted small" x="1368" y="1102">Spawn: PlayerSpawn_A | Dummy: 3 | Build: Scene</text>
+
+  <!-- bottom implementation order -->
+  <rect class="panel shadow" x="56" y="1210" width="1688" height="50" rx="10"/>
+  <text class="text body" x="84" y="1242">推荐落地顺序：Level Browser + Scene Brush -> Selection Inspector -> Gameplay Markers -> Validate Issue List -> Playtest Runtime Preview</text>
+
+  <!-- callouts -->
+  <path class="lineGreen" d="M382 752 C444 714, 490 682, 566 672"/>
+  <text class="green small" x="404" y="720">Brush 拖入 Scene</text>
+  <path class="lineYellow" d="M1008 884 C1144 842, 1242 834, 1346 854"/>
+  <text class="yellow small" x="1124" y="820">Validate 问题可反向定位</text>
+  <path class="line" d="M1320 636 C1232 620, 1168 640, 1130 640"/>
+  <text class="blue small" x="1168" y="612">选中对象同步 Inspector</text>
+  <path class="lineRed" d="M1148 954 C1232 986, 1300 1002, 1346 1078"/>
+  <text class="red small" x="1174" y="1002">Playtest 结果回流编辑器</text>
+</svg>

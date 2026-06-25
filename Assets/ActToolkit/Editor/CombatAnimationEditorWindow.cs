@@ -102,8 +102,7 @@ namespace ActToolkit.EditorTools
         private string comboPreviewPathLabel = string.Empty;
         private bool comboPreviewActive;
 
-        [MenuItem("Tools/Act Toolkit/Character Action Editor")]
-        [MenuItem("Tools/Act Toolkit/Combat Animation Editor")]
+        [MenuItem(ActToolkitMenu.CharacterRoot + "/Character Actions", false, 10)]
         public static void Open()
         {
             CombatAnimationEditorWindow window = GetWindow<CombatAnimationEditorWindow>();
@@ -5917,7 +5916,7 @@ namespace ActToolkit.EditorTools
         private int totalErrors;
         private int totalWarnings;
 
-        [MenuItem("Tools/Act Toolkit/Combat Animation Batch Validator")]
+        [MenuItem(ActToolkitMenu.DiagnosticsRoot + "/Combat/Animation Batch Validator", false, 410)]
         public static void Open()
         {
             CombatAnimationBatchValidatorWindow window = GetWindow<CombatAnimationBatchValidatorWindow>();
