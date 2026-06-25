@@ -61,21 +61,81 @@ namespace ActToolkit.EditorTools
             Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material != null)
             {
+                ConfigureBlockoutMaterial(material, color);
+                EditorUtility.SetDirty(material);
+                AssetDatabase.SaveAssets();
                 return material;
             }
 
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Standard");
-            }
-
-            material = new Material(shader);
+            material = new Material(FindBlockoutShader());
             material.name = "M_Blockout_" + kind;
-            material.color = color;
+            ConfigureBlockoutMaterial(material, color);
             AssetDatabase.CreateAsset(material, path);
             AssetDatabase.SaveAssets();
             return material;
+        }
+
+        private static Shader FindBlockoutShader()
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader != null)
+            {
+                return shader;
+            }
+
+            shader = Shader.Find("Unlit/Color");
+            if (shader != null)
+            {
+                return shader;
+            }
+
+            shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader != null)
+            {
+                return shader;
+            }
+
+            return Shader.Find("Standard");
+        }
+
+        private static void ConfigureBlockoutMaterial(Material material, Color color)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            Shader shader = FindBlockoutShader();
+            if (shader != null && material.shader != shader)
+            {
+                material.shader = shader;
+            }
+
+            material.color = color;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", color);
+            }
+
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.SetColor("_EmissionColor", Color.black);
+            }
+
+            if (material.HasProperty("_Smoothness"))
+            {
+                material.SetFloat("_Smoothness", 0f);
+            }
+
+            if (material.HasProperty("_Glossiness"))
+            {
+                material.SetFloat("_Glossiness", 0f);
+            }
         }
 
         public static Color ColorFor(BlockoutElementKind kind)

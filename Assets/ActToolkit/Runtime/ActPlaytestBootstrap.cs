@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
 
 namespace ActToolkit
 {
@@ -22,6 +23,8 @@ namespace ActToolkit
 
         [SerializeField]
         private Vector3 fallbackPlayerPosition = Vector3.zero;
+
+        private static readonly Dictionary<BlockoutElementKind, Material> RuntimeBlockoutMaterials = new Dictionary<BlockoutElementKind, Material>();
 
         private GameObject runtimeRoot;
 
@@ -53,6 +56,7 @@ namespace ActToolkit
             runtimeRoot.transform.SetParent(transform, false);
 
             List<BlockoutElement> elements = CollectBlockoutElements();
+            int assignedBlockoutMaterials = ApplyRuntimeBlockoutVisuals(elements);
             BlockoutElement playerSpawn = FindFirst(elements, BlockoutElementKind.SpawnPoint);
             Vector3 playerPosition = playerSpawn == null ? fallbackPlayerPosition : PlayerRootPosition(playerSpawn);
             Quaternion playerRotation = playerSpawn == null ? Quaternion.identity : YawOnly(playerSpawn.transform.rotation);
@@ -77,8 +81,11 @@ namespace ActToolkit
             Debug.Log("[ActPlaytestBootstrap] Playtest runtime spawned. profile="
                 + (playerProfile == null ? "None" : playerProfile.displayName)
                 + ", playerSpawn="
-                + (playerSpawn == null ? "fallback" : playerSpawn.name),
+                + (playerSpawn == null ? "fallback" : playerSpawn.name)
+                + ", blockoutMaterials="
+                + assignedBlockoutMaterials,
                 this);
+            LogPlaytestRenderDiagnostic(camera, elements);
         }
 
         private GameObject CreatePlayer(Vector3 position, Quaternion rotation, Camera camera)
@@ -184,6 +191,7 @@ namespace ActToolkit
             camera.backgroundColor = new Color(0.18f, 0.20f, 0.22f, 1f);
             camera.allowHDR = false;
             ConfigurePlaytestCameraRendering(camera);
+            DisableOtherSceneCameras(camera);
             return camera;
         }
 
@@ -200,6 +208,144 @@ namespace ActToolkit
             cameraData.allowHDROutput = false;
             cameraData.stopNaN = true;
             cameraData.dithering = false;
+        }
+
+        private static void DisableOtherSceneCameras(Camera activeCamera)
+        {
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            Scene scene = activeCamera.gameObject.scene;
+            Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Include);
+            foreach (Camera camera in cameras)
+            {
+                if (camera == null || camera == activeCamera || camera.gameObject.scene != scene)
+                {
+                    continue;
+                }
+
+                camera.enabled = false;
+            }
+
+            activeCamera.enabled = true;
+        }
+
+        private static int ApplyRuntimeBlockoutVisuals(List<BlockoutElement> elements)
+        {
+            int assigned = 0;
+            foreach (BlockoutElement element in elements)
+            {
+                if (element == null)
+                {
+                    continue;
+                }
+
+                Renderer[] renderers = element.GetComponentsInChildren<Renderer>(true);
+                foreach (Renderer targetRenderer in renderers)
+                {
+                    if (targetRenderer == null)
+                    {
+                        continue;
+                    }
+
+                    targetRenderer.sharedMaterial = RuntimeBlockoutMaterial(element.kind);
+                    assigned++;
+                }
+            }
+
+            assigned += ApplyFallbackBlockoutRootMaterials();
+            return assigned;
+        }
+
+        private static int ApplyFallbackBlockoutRootMaterials()
+        {
+            GameObject root = GameObject.Find("Blockout_Root");
+            if (root == null)
+            {
+                return 0;
+            }
+
+            int assigned = 0;
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer targetRenderer in renderers)
+            {
+                if (targetRenderer == null || targetRenderer.GetComponentInParent<BlockoutElement>() != null)
+                {
+                    continue;
+                }
+
+                BlockoutElementKind kind = GuessBlockoutKind(targetRenderer.name);
+                targetRenderer.sharedMaterial = RuntimeBlockoutMaterial(kind);
+                assigned++;
+            }
+
+            return assigned;
+        }
+
+        private static Material RuntimeBlockoutMaterial(BlockoutElementKind kind)
+        {
+            if (RuntimeBlockoutMaterials.TryGetValue(kind, out Material cached) && cached != null)
+            {
+                return cached;
+            }
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Unlit/Color");
+            }
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Universal Render Pipeline/Lit");
+            }
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            Material material = new Material(shader);
+            material.name = "M_Playtest_Blockout_" + kind;
+            ApplyMaterialColor(material, ColorFor(kind));
+            RuntimeBlockoutMaterials[kind] = material;
+            return material;
+        }
+
+        private static void ApplyMaterialColor(Material material, Color color)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            material.color = color;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", color);
+            }
+
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.SetColor("_EmissionColor", Color.black);
+            }
+
+            if (material.HasProperty("_Smoothness"))
+            {
+                material.SetFloat("_Smoothness", 0f);
+            }
+
+            if (material.HasProperty("_Glossiness"))
+            {
+                material.SetFloat("_Glossiness", 0f);
+            }
         }
 
         private void CreateDummies(List<BlockoutElement> elements, Transform player)
@@ -280,7 +426,7 @@ namespace ActToolkit
 
             Material material = new Material(shader);
             material.name = "M_Playtest_Dummy_Runtime";
-            material.color = new Color(0.55f, 0.40f, 0.26f, 1f);
+            ApplyMaterialColor(material, new Color(0.55f, 0.40f, 0.26f, 1f));
             return material;
         }
 
@@ -360,6 +506,143 @@ namespace ActToolkit
                 || kind == BlockoutElementKind.KillZone
                 || kind == BlockoutElementKind.NavMarker
                 || kind == BlockoutElementKind.CombatZone;
+        }
+
+        private static BlockoutElementKind GuessBlockoutKind(string objectName)
+        {
+            string name = objectName == null ? string.Empty : objectName.ToLowerInvariant();
+            if (name.Contains("floor"))
+            {
+                return BlockoutElementKind.Floor;
+            }
+
+            if (name.Contains("wall"))
+            {
+                return BlockoutElementKind.Wall;
+            }
+
+            if (name.Contains("ramp"))
+            {
+                return BlockoutElementKind.Ramp;
+            }
+
+            if (name.Contains("platform"))
+            {
+                return BlockoutElementKind.Platform;
+            }
+
+            if (name.Contains("cover"))
+            {
+                return BlockoutElementKind.Cover;
+            }
+
+            return BlockoutElementKind.Block;
+        }
+
+        private static Color ColorFor(BlockoutElementKind kind)
+        {
+            switch (kind)
+            {
+                case BlockoutElementKind.Floor:
+                    return new Color(0.22f, 0.25f, 0.28f, 1f);
+                case BlockoutElementKind.Wall:
+                    return new Color(0.30f, 0.34f, 0.38f, 1f);
+                case BlockoutElementKind.Ramp:
+                    return new Color(0.42f, 0.47f, 0.36f, 1f);
+                case BlockoutElementKind.Platform:
+                    return new Color(0.22f, 0.40f, 0.52f, 1f);
+                case BlockoutElementKind.Cover:
+                    return new Color(0.48f, 0.36f, 0.25f, 1f);
+                case BlockoutElementKind.SpawnPoint:
+                    return new Color(0.14f, 0.55f, 0.32f, 1f);
+                case BlockoutElementKind.EnemySpawn:
+                    return new Color(0.62f, 0.34f, 0.16f, 1f);
+                case BlockoutElementKind.DummySpawn:
+                    return new Color(0.58f, 0.48f, 0.20f, 1f);
+                case BlockoutElementKind.CombatZone:
+                    return new Color(0.26f, 0.48f, 0.25f, 1f);
+                default:
+                    return new Color(0.34f, 0.40f, 0.46f, 1f);
+            }
+        }
+
+        private static void LogPlaytestRenderDiagnostic(Camera camera, List<BlockoutElement> elements)
+        {
+            int enabledCameraCount = 0;
+            string enabledCameraNames = string.Empty;
+            if (camera != null)
+            {
+                Scene scene = camera.gameObject.scene;
+                Camera[] cameras = FindObjectsByType<Camera>(FindObjectsInactive.Include);
+                foreach (Camera candidate in cameras)
+                {
+                    if (candidate == null || !candidate.enabled || candidate.gameObject.scene != scene)
+                    {
+                        continue;
+                    }
+
+                    enabledCameraCount++;
+                    if (enabledCameraNames.Length > 0)
+                    {
+                        enabledCameraNames += ", ";
+                    }
+
+                    enabledCameraNames += candidate.name;
+                }
+            }
+
+            bool urpPost = false;
+            bool urpHdr = false;
+            if (camera != null)
+            {
+                UniversalAdditionalCameraData cameraData = camera.GetUniversalAdditionalCameraData();
+                urpPost = cameraData.renderPostProcessing;
+                urpHdr = cameraData.allowHDROutput;
+            }
+
+            int rendererCount = 0;
+            string firstMaterial = "None";
+            Color firstColor = Color.black;
+            foreach (BlockoutElement element in elements)
+            {
+                if (element == null)
+                {
+                    continue;
+                }
+
+                Renderer renderer = element.GetComponentInChildren<Renderer>(true);
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                rendererCount++;
+                if (rendererCount == 1 && renderer.sharedMaterial != null)
+                {
+                    firstMaterial = renderer.sharedMaterial.name;
+                    firstColor = renderer.sharedMaterial.color;
+                }
+            }
+
+            Debug.Log("[ActPlaytestBootstrap/RenderDiag] camera="
+                + (camera == null ? "None" : camera.name)
+                + ", cameraHDR="
+                + (camera != null && camera.allowHDR)
+                + ", urpPost="
+                + urpPost
+                + ", urpHDROutput="
+                + urpHdr
+                + ", enabledCameras="
+                + enabledCameraCount
+                + " ["
+                + enabledCameraNames
+                + "], blockoutRenderers="
+                + rendererCount
+                + ", firstMaterial="
+                + firstMaterial
+                + ", firstColor="
+                + firstColor,
+                camera);
         }
 
         private static Quaternion YawOnly(Quaternion rotation)

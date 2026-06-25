@@ -1842,10 +1842,7 @@ namespace ActToolkit.EditorTools
                     continue;
                 }
 
-                if (camera.name == "Level Camera" || camera.CompareTag("MainCamera"))
-                {
-                    ConfigureLevelCamera(camera);
-                }
+                ConfigureLevelCamera(camera);
             }
 
             EditorSceneManager.MarkSceneDirty(activeScene);
