@@ -153,6 +153,9 @@ namespace ActToolkit.EditorTools
                 AuditClip(builder, profile.displayName, "Idle", string.Empty, modelPath, profile.idleClip, ref checkedCount, ref incompatibleCount);
                 AuditClip(builder, profile.displayName, "Walk", string.Empty, modelPath, profile.walkClip, ref checkedCount, ref incompatibleCount);
                 AuditClip(builder, profile.displayName, "Move", string.Empty, modelPath, profile.moveClip, ref checkedCount, ref incompatibleCount);
+                AuditClip(builder, profile.displayName, "Jump Start", string.Empty, modelPath, profile.jumpStartClip, ref checkedCount, ref incompatibleCount);
+                AuditClip(builder, profile.displayName, "Jump Loop", string.Empty, modelPath, profile.jumpLoopClip, ref checkedCount, ref incompatibleCount);
+                AuditClip(builder, profile.displayName, "Jump Land", string.Empty, modelPath, profile.jumpLandClip, ref checkedCount, ref incompatibleCount);
 
                 if (profile.comboTable == null || profile.comboTable.actions == null)
                 {

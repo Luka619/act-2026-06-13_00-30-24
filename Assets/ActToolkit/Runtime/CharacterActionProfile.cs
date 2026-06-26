@@ -12,6 +12,9 @@ namespace ActToolkit
         public AnimationClip idleClip;
         public AnimationClip walkClip;
         public AnimationClip moveClip;
+        public AnimationClip jumpStartClip;
+        public AnimationClip jumpLoopClip;
+        public AnimationClip jumpLandClip;
         public CombatActionDatabase comboTable;
 
         public void EnsureDefaults()

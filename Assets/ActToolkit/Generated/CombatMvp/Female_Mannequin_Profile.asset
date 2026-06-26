@@ -16,7 +16,7 @@ MonoBehaviour:
   displayName: Female Mannequin
   modelPrefab: {fileID: 919132149155446097, guid: b0a0b783e7f89fd42a4db835e29e8bd0, type: 3}
   avatar: {fileID: 0}
-  idleClip: {fileID: 0}
+  idleClip: {fileID: 7994627924475153551, guid: e422c863c44ff4a429581a00caa26d07, type: 3}
   walkClip: {fileID: 0}
-  moveClip: {fileID: 0}
+  moveClip: {fileID: -8815886378510225334, guid: e422c863c44ff4a429581a00caa26d07, type: 3}
   comboTable: {fileID: 11400000, guid: a115797d406c233448bcd09b2bb1bf05, type: 2}

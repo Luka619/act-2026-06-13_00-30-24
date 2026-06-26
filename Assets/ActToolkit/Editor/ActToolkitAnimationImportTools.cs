@@ -244,6 +244,9 @@ namespace ActToolkit.EditorTools
                 AddClip(profile.idleClip, uniqueClips, clips);
                 AddClip(profile.walkClip, uniqueClips, clips);
                 AddClip(profile.moveClip, uniqueClips, clips);
+                AddClip(profile.jumpStartClip, uniqueClips, clips);
+                AddClip(profile.jumpLoopClip, uniqueClips, clips);
+                AddClip(profile.jumpLandClip, uniqueClips, clips);
                 if (profile.comboTable != null && profile.comboTable.actions != null)
                 {
                     foreach (CombatAnimationDefinition definition in profile.comboTable.actions)

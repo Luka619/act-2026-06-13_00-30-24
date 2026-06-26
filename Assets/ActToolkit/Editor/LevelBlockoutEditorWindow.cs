@@ -19,6 +19,12 @@ namespace ActToolkit.EditorTools
         private const string DefaultPlaytestProfilePath = ActToolkitEditorUtilities.CombatMvpFolder + "/Female_Mannequin_Profile.asset";
         private const string PlaytestBootstrapName = "ActPlaytestBootstrap";
         private const float LevelKeyLightIntensity = 0.75f;
+        private const float DefaultPlayerDiameter = 0.7f;
+        private const float DefaultPlayerHeight = 1.8f;
+        private const float DefaultTightPassageWidth = 2f;
+        private const float DefaultComfortPassageWidth = 3f;
+        private const float DefaultDuelSpaceDiameter = 6f;
+        private const float DefaultSkirmishSpaceDiameter = 10f;
         private static readonly Color LevelCameraBackgroundColor = new Color(0.18f, 0.20f, 0.22f, 1f);
         private static readonly Color LevelAmbientColor = new Color(0.30f, 0.32f, 0.34f, 1f);
         private static readonly Color LevelKeyLightColor = new Color(1f, 0.96f, 0.90f, 1f);
@@ -65,7 +71,16 @@ namespace ActToolkit.EditorTools
         private bool sceneEditingEnabled = true;
         private bool createOnEmptyLeftClick = true;
         private bool showPlacementPreview = true;
+        private bool showScaleGuides = true;
+        private bool showPlanDimensionLabels = true;
+        private bool showSceneDimensionLabels = true;
         private bool snapSceneDrag = true;
+        private float playerDiameter = DefaultPlayerDiameter;
+        private float playerHeight = DefaultPlayerHeight;
+        private float tightPassageWidth = DefaultTightPassageWidth;
+        private float comfortPassageWidth = DefaultComfortPassageWidth;
+        private float duelSpaceDiameter = DefaultDuelSpaceDiameter;
+        private float skirmishSpaceDiameter = DefaultSkirmishSpaceDiameter;
         private string newLevelName = DefaultLevelName;
         private Vector2 leftScrollPosition;
         private Vector2 centerScrollPosition;
@@ -284,6 +299,8 @@ namespace ActToolkit.EditorTools
 
                     EditorGUILayout.Space(8f);
                     DrawSharedSceneSettings();
+                    EditorGUILayout.Space(8f);
+                    DrawScaleGuidePanel();
                 }
             }
         }
@@ -497,6 +514,38 @@ namespace ActToolkit.EditorTools
                 showPlacementPreview = EditorGUILayout.Toggle("Placement Preview", showPlacementPreview);
                 snapSceneDrag = EditorGUILayout.Toggle("Snap Drag", snapSceneDrag);
                 gridSize = Mathf.Max(0.05f, EditorGUILayout.FloatField("Grid Size", gridSize));
+            }
+        }
+
+        private void DrawScaleGuidePanel()
+        {
+            EditorGUILayout.LabelField("Scale Guide", EditorStyles.boldLabel);
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUI.BeginChangeCheck();
+                showScaleGuides = EditorGUILayout.Toggle("Show Guides", showScaleGuides);
+                using (new EditorGUI.DisabledScope(!showScaleGuides))
+                {
+                    showSceneDimensionLabels = EditorGUILayout.Toggle("Scene Labels", showSceneDimensionLabels);
+                    showPlanDimensionLabels = EditorGUILayout.Toggle("Plan Labels", showPlanDimensionLabels);
+                    playerDiameter = Mathf.Max(0.2f, EditorGUILayout.FloatField("Player Diameter", playerDiameter));
+                    playerHeight = Mathf.Max(0.5f, EditorGUILayout.FloatField("Player Height", playerHeight));
+                    tightPassageWidth = Mathf.Max(playerDiameter, EditorGUILayout.FloatField("Tight Passage", tightPassageWidth));
+                    comfortPassageWidth = Mathf.Max(tightPassageWidth, EditorGUILayout.FloatField("Comfort Passage", comfortPassageWidth));
+                    duelSpaceDiameter = Mathf.Max(comfortPassageWidth, EditorGUILayout.FloatField("Duel Space", duelSpaceDiameter));
+                    skirmishSpaceDiameter = Mathf.Max(duelSpaceDiameter, EditorGUILayout.FloatField("Skirmish Space", skirmishSpaceDiameter));
+                }
+
+                EditorGUILayout.LabelField("Rule Of Thumb", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Tight lane: " + FormatMeters(tightPassageWidth) + " | Comfortable: " + FormatMeters(comfortPassageWidth), EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField("Duel: " + FormatMeters(duelSpaceDiameter) + " | Skirmish: " + FormatMeters(skirmishSpaceDiameter), EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField("Keep repeated cover from closing paths below the comfortable width unless it is an intentional choke.", EditorStyles.wordWrappedMiniLabel);
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    SceneView.RepaintAll();
+                    Repaint();
+                }
             }
         }
 
@@ -718,13 +767,28 @@ namespace ActToolkit.EditorTools
 
             Handles.BeginGUI();
             DrawPlanGrid(localRect);
+            if (showScaleGuides)
+            {
+                DrawPlanScaleRings(localRect, elements);
+            }
+
             DrawPlanElements(localRect, elements);
+            if (showScaleGuides)
+            {
+                DrawPlanScaleBar(localRect);
+            }
+
             Handles.EndGUI();
 
             Rect hintRect = new Rect(8f, 8f, 430f, 38f);
             GUI.Box(hintRect, GUIContent.none, EditorStyles.helpBox);
             GUI.Label(new Rect(hintRect.x + 8f, hintRect.y + 3f, hintRect.width - 16f, 16f), "Top-down layout. LMB select/drag, MMB pan, wheel zoom.");
             GUI.Label(new Rect(hintRect.x + 8f, hintRect.y + 19f, hintRect.width - 16f, 16f), "Drag changes Scene X/Z and keeps the current height.");
+
+            if (showScaleGuides)
+            {
+                DrawPlanScaleLegend(localRect);
+            }
 
             GUI.EndGroup();
         }
@@ -792,11 +856,97 @@ namespace ActToolkit.EditorTools
                     Handles.DrawLine(new Vector3(center.x - 7f, center.y), new Vector3(center.x + 7f, center.y));
                 }
 
-                if (elementRect.width > 46f && elementRect.height > 18f)
+                if (showScaleGuides && showPlanDimensionLabels)
                 {
-                    GUI.Label(new Rect(elementRect.x + 4f, elementRect.y + 2f, elementRect.width - 8f, 18f), ShortElementLabel(element), EditorStyles.miniLabel);
+                    DrawPlanElementLabel(elementRect, element);
+                }
+                else if (elementRect.width > 46f && elementRect.height > 18f)
+                {
+                    GUI.Label(new Rect(elementRect.x + 4f, elementRect.y + 2f, elementRect.width - 8f, 18f), ShortElementLabel(element), PlanLabelStyle());
                 }
             }
+        }
+
+        private void DrawPlanElementLabel(Rect elementRect, BlockoutElement element)
+        {
+            string label = ShortElementLabel(element) + "\n" + FormatFootprint(element);
+            GUIStyle style = PlanLabelStyle();
+            Rect labelRect;
+            if (elementRect.width >= 58f && elementRect.height >= 30f)
+            {
+                labelRect = new Rect(elementRect.x + 3f, elementRect.y + 2f, elementRect.width - 6f, Mathf.Min(34f, elementRect.height - 4f));
+            }
+            else
+            {
+                labelRect = new Rect(elementRect.center.x + 6f, elementRect.yMin - 8f, 130f, 34f);
+            }
+
+            GUI.Label(labelRect, label, style);
+        }
+
+        private void DrawPlanScaleRings(Rect rect, BlockoutElement[] elements)
+        {
+            BlockoutElement anchor = ScaleGuideAnchor(elements);
+            if (anchor == null)
+            {
+                return;
+            }
+
+            Vector2 center = WorldToPlan(rect, anchor.transform.position);
+            DrawPlanCircle(center, playerDiameter * 0.5f * planViewPixelsPerMeter, new Color(0.75f, 0.95f, 1f, 0.9f), 1.5f);
+            DrawPlanCircle(center, duelSpaceDiameter * 0.5f * planViewPixelsPerMeter, new Color(1f, 0.85f, 0.25f, 0.75f), 1.25f);
+            DrawPlanCircle(center, skirmishSpaceDiameter * 0.5f * planViewPixelsPerMeter, new Color(0.55f, 0.95f, 0.55f, 0.55f), 1f);
+
+            GUI.Label(
+                new Rect(center.x + duelSpaceDiameter * 0.5f * planViewPixelsPerMeter + 4f, center.y - 15f, 128f, 30f),
+                "Duel " + FormatMeters(duelSpaceDiameter),
+                PlanLabelStyle());
+        }
+
+        private static void DrawPlanCircle(Vector2 center, float radiusPixels, Color color, float width)
+        {
+            if (radiusPixels <= 1f)
+            {
+                return;
+            }
+
+            Handles.color = color;
+            Handles.DrawWireDisc(new Vector3(center.x, center.y, 0f), Vector3.forward, radiusPixels, width);
+        }
+
+        private void DrawPlanScaleBar(Rect rect)
+        {
+            float targetMeters = NiceScaleLength((rect.width * 0.22f) / Mathf.Max(1f, planViewPixelsPerMeter));
+            float pixelLength = targetMeters * planViewPixelsPerMeter;
+            Vector2 start = new Vector2(rect.xMin + 16f, rect.yMax - 24f);
+            Vector2 end = start + Vector2.right * pixelLength;
+
+            Handles.color = new Color(0.9f, 0.94f, 0.98f, 1f);
+            Handles.DrawAAPolyLine(2f, new Vector3(start.x, start.y), new Vector3(end.x, end.y));
+            Handles.DrawLine(new Vector3(start.x, start.y - 5f), new Vector3(start.x, start.y + 5f));
+            Handles.DrawLine(new Vector3(end.x, end.y - 5f), new Vector3(end.x, end.y + 5f));
+            GUI.Label(new Rect(start.x, start.y - 22f, 96f, 18f), FormatMeters(targetMeters), PlanLabelStyle());
+        }
+
+        private void DrawPlanScaleLegend(Rect rect)
+        {
+            Rect legend = new Rect(rect.xMax - 182f, rect.yMax - 76f, 172f, 64f);
+            GUI.Box(legend, GUIContent.none, EditorStyles.helpBox);
+
+            GUIStyle style = PlanLabelStyle();
+            GUI.Label(new Rect(legend.x + 8f, legend.y + 4f, legend.width - 16f, 16f), "Scale References", style);
+            Handles.BeginGUI();
+            DrawPlanLegendLine(legend.x + 10f, legend.y + 26f, tightPassageWidth, new Color(1f, 0.65f, 0.35f, 1f), "Tight " + FormatMeters(tightPassageWidth));
+            DrawPlanLegendLine(legend.x + 10f, legend.y + 46f, comfortPassageWidth, new Color(0.55f, 0.95f, 0.55f, 1f), "Comfort " + FormatMeters(comfortPassageWidth));
+            Handles.EndGUI();
+        }
+
+        private void DrawPlanLegendLine(float x, float y, float meters, Color color, string label)
+        {
+            float length = Mathf.Min(58f, meters * planViewPixelsPerMeter);
+            Handles.color = color;
+            Handles.DrawAAPolyLine(3f, new Vector3(x, y), new Vector3(x + length, y));
+            GUI.Label(new Rect(x + 66f, y - 8f, 94f, 16f), label, PlanLabelStyle());
         }
 
         private static void DrawPlanRectOutline(Rect rect, float width)
@@ -1031,6 +1181,115 @@ namespace ActToolkit.EditorTools
             return label.Length <= 24 ? label : label.Substring(0, 21) + "...";
         }
 
+        private BlockoutElement ScaleGuideAnchor(BlockoutElement[] elements)
+        {
+            BlockoutElement selected = SelectedBlockoutElement();
+            if (selected != null)
+            {
+                return selected;
+            }
+
+            foreach (BlockoutElement element in elements)
+            {
+                if (element != null
+                    && (element.kind == BlockoutElementKind.SpawnPoint
+                        || element.kind == BlockoutElementKind.Objective
+                        || element.kind == BlockoutElementKind.CombatZone))
+                {
+                    return element;
+                }
+            }
+
+            return elements.Length > 0 ? elements[0] : null;
+        }
+
+        private static string FormatFootprint(BlockoutElement element)
+        {
+            if (element == null)
+            {
+                return string.Empty;
+            }
+
+            Vector3 size = element.logicalSize;
+            return FormatMeters(size.x) + " x " + FormatMeters(size.z) + " / h " + FormatMeters(size.y);
+        }
+
+        private static string FormatMeters(float value)
+        {
+            return value.ToString("0.#") + "m";
+        }
+
+        private static float NiceScaleLength(float targetMeters)
+        {
+            if (targetMeters <= 1f)
+            {
+                return 1f;
+            }
+
+            if (targetMeters <= 2f)
+            {
+                return 2f;
+            }
+
+            if (targetMeters <= 5f)
+            {
+                return 5f;
+            }
+
+            if (targetMeters <= 10f)
+            {
+                return 10f;
+            }
+
+            return Mathf.Ceil(targetMeters / 10f) * 10f;
+        }
+
+        private string ScaleGuidanceFor(BlockoutElement element)
+        {
+            switch (element.kind)
+            {
+                case BlockoutElementKind.Cover:
+                    return "Cover works best when it creates decisions without shrinking nearby paths below " + FormatMeters(comfortPassageWidth) + ".";
+                case BlockoutElementKind.CombatZone:
+                    return "Use at least " + FormatMeters(duelSpaceDiameter) + " for a simple duel and around " + FormatMeters(skirmishSpaceDiameter) + " for small group movement.";
+                case BlockoutElementKind.SpawnPoint:
+                case BlockoutElementKind.EnemySpawn:
+                case BlockoutElementKind.DummySpawn:
+                    return "Keep a readable lane from spawn to the first objective, usually around " + FormatMeters(comfortPassageWidth) + " wide.";
+                case BlockoutElementKind.Objective:
+                    return "Objectives should pull players into a readable fighting pocket, not into a dead-end squeeze.";
+                case BlockoutElementKind.Wall:
+                case BlockoutElementKind.Block:
+                    return "Repeated walls or blocks should leave either a clear route or an intentional choke.";
+                default:
+                    return string.Empty;
+            }
+        }
+
+        private static GUIStyle PlanLabelStyle()
+        {
+            GUIStyle style = new GUIStyle(EditorStyles.miniLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                clipping = TextClipping.Clip,
+                wordWrap = true
+            };
+            style.normal.textColor = new Color(0.92f, 0.96f, 1f, 1f);
+            return style;
+        }
+
+        private static GUIStyle SceneLabelStyle()
+        {
+            GUIStyle style = new GUIStyle(EditorStyles.helpBox)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 10,
+                padding = new RectOffset(5, 5, 3, 3)
+            };
+            style.normal.textColor = new Color(0.92f, 0.96f, 1f, 1f);
+            return style;
+        }
+
         private void DrawElementList()
         {
             EditorGUILayout.LabelField("Current Level Elements", EditorStyles.boldLabel);
@@ -1123,6 +1382,7 @@ namespace ActToolkit.EditorTools
                 Vector3 nextSize = EditorGUILayout.Vector3Field("Logical Size", selected.logicalSize);
                 Vector3 nextPosition = EditorGUILayout.Vector3Field("Position", selected.transform.position);
                 Vector3 nextEuler = EditorGUILayout.Vector3Field("Rotation", selected.transform.rotation.eulerAngles);
+                DrawSelectedScaleReadout(selected);
 
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -1173,6 +1433,28 @@ namespace ActToolkit.EditorTools
                     {
                         DeleteElement(selected);
                     }
+                }
+            }
+        }
+
+        private void DrawSelectedScaleReadout(BlockoutElement selected)
+        {
+            if (selected == null)
+            {
+                return;
+            }
+
+            EditorGUILayout.Space(4f);
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField("Scale Readout", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Footprint", FormatFootprint(selected));
+                EditorGUILayout.LabelField("Player", FormatMeters(playerDiameter) + " dia / " + FormatMeters(playerHeight) + " high");
+
+                string note = ScaleGuidanceFor(selected);
+                if (!string.IsNullOrWhiteSpace(note))
+                {
+                    EditorGUILayout.LabelField(note, EditorStyles.wordWrappedMiniLabel);
                 }
             }
         }
@@ -1250,6 +1532,7 @@ namespace ActToolkit.EditorTools
                 GUILayout.Label("Tool: " + sceneEditTool, EditorStyles.miniLabel, GUILayout.Width(90f));
                 GUILayout.Label("Grid: " + gridSize.ToString("0.##") + "m", EditorStyles.miniLabel, GUILayout.Width(90f));
                 GUILayout.Label("Snap: " + (snapSceneDrag ? "On" : "Off"), EditorStyles.miniLabel, GUILayout.Width(90f));
+                GUILayout.Label("Comfort lane: " + FormatMeters(comfortPassageWidth), EditorStyles.miniLabel, GUILayout.Width(140f));
                 GUILayout.FlexibleSpace();
                 GUILayout.Label("Validation: " + errorCount + " errors, " + warningCount + " warnings", EditorStyles.miniLabel, GUILayout.Width(210f));
             }
@@ -1271,6 +1554,7 @@ namespace ActToolkit.EditorTools
             UpdateSceneHoverPoint(current.mousePosition);
             DrawSceneOverlay();
             DrawPlacementPreview();
+            DrawSceneScaleGuides(sceneView);
             if (sceneEditTool == SceneEditTool.Select)
             {
                 DrawSelectedElementHandles();
@@ -1492,6 +1776,95 @@ namespace ActToolkit.EditorTools
             GUI.Label(new Rect(rect.x + 10f, rect.y + 74f, rect.width - 20f, 18f), "RMB context, Q/Esc select, Del delete, Ctrl+D duplicate, F frame, Alt camera");
 
             Handles.EndGUI();
+        }
+
+        private void DrawSceneScaleGuides(SceneView sceneView)
+        {
+            if (!showScaleGuides)
+            {
+                return;
+            }
+
+            BlockoutElement[] elements = FindSceneBlockoutElements();
+            BlockoutElement anchor = ScaleGuideAnchor(elements);
+            if (anchor != null)
+            {
+                DrawSceneScaleRings(anchor.transform.position);
+            }
+
+            if (!showSceneDimensionLabels)
+            {
+                return;
+            }
+
+            Camera sceneCamera = sceneView == null ? null : sceneView.camera;
+            foreach (BlockoutElement element in elements)
+            {
+                if (element == null)
+                {
+                    continue;
+                }
+
+                Vector3 labelPosition = SceneLabelPosition(element);
+                if (sceneCamera != null && Vector3.Distance(sceneCamera.transform.position, labelPosition) > 90f)
+                {
+                    continue;
+                }
+
+                Color color = ActToolkitEditorUtilities.ColorFor(element.kind);
+                Handles.color = new Color(color.r, color.g, color.b, 0.95f);
+                DrawSceneFootprint(element);
+
+                string label = ShortElementLabel(element) + "\n" + FormatFootprint(element);
+                Handles.Label(labelPosition, label, SceneLabelStyle());
+            }
+        }
+
+        private void DrawSceneScaleRings(Vector3 anchorPosition)
+        {
+            Vector3 center = new Vector3(anchorPosition.x, 0.05f, anchorPosition.z);
+            Handles.color = new Color(0.75f, 0.95f, 1f, 0.85f);
+            Handles.DrawWireDisc(center, Vector3.up, playerDiameter * 0.5f, 1.5f);
+            Handles.color = new Color(1f, 0.85f, 0.25f, 0.65f);
+            Handles.DrawWireDisc(center, Vector3.up, duelSpaceDiameter * 0.5f, 1.25f);
+            Handles.color = new Color(0.55f, 0.95f, 0.55f, 0.45f);
+            Handles.DrawWireDisc(center, Vector3.up, skirmishSpaceDiameter * 0.5f, 1f);
+            Handles.Label(center + Vector3.right * (duelSpaceDiameter * 0.5f + 0.25f), "Duel " + FormatMeters(duelSpaceDiameter), SceneLabelStyle());
+        }
+
+        private static void DrawSceneFootprint(BlockoutElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            if (IsPointMarkerKind(element.kind))
+            {
+                Handles.DrawWireDisc(element.transform.position, Vector3.up, Mathf.Max(0.1f, element.logicalSize.x * 0.5f), 1.25f);
+                return;
+            }
+
+            Vector3 halfRight = element.transform.right * (Mathf.Max(0.05f, element.logicalSize.x) * 0.5f);
+            Vector3 halfForward = element.transform.forward * (Mathf.Max(0.05f, element.logicalSize.z) * 0.5f);
+            Vector3 center = element.transform.position + Vector3.up * 0.04f;
+            if (element.kind != BlockoutElementKind.Floor)
+            {
+                center -= element.transform.up * (Mathf.Max(0.05f, element.logicalSize.y) * 0.5f);
+            }
+
+            Handles.DrawAAPolyLine(1.5f,
+                center - halfRight - halfForward,
+                center + halfRight - halfForward,
+                center + halfRight + halfForward,
+                center - halfRight + halfForward,
+                center - halfRight - halfForward);
+        }
+
+        private static Vector3 SceneLabelPosition(BlockoutElement element)
+        {
+            float height = Mathf.Max(0.2f, element.logicalSize.y);
+            return element.transform.position + Vector3.up * (height * 0.5f + 0.35f);
         }
 
         private void DrawPlacementPreview()
@@ -2350,6 +2723,8 @@ namespace ActToolkit.EditorTools
                     AddIssue(ValidationSeverity.Error, "Element has an invalid logical size.", element);
                 }
 
+                AddScaleGuidanceIssues(element);
+
                 Collider collider = element.GetComponent<Collider>();
                 if (collider == null)
                 {
@@ -2385,6 +2760,41 @@ namespace ActToolkit.EditorTools
             }
 
             Repaint();
+        }
+
+        private void AddScaleGuidanceIssues(BlockoutElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            float width = Mathf.Min(element.logicalSize.x, element.logicalSize.z);
+            float depth = Mathf.Max(element.logicalSize.x, element.logicalSize.z);
+
+            if (element.kind == BlockoutElementKind.CombatZone
+                && (element.logicalSize.x < duelSpaceDiameter || element.logicalSize.z < duelSpaceDiameter))
+            {
+                AddIssue(ValidationSeverity.Warning, "Combat Zone is smaller than the duel-space guide (" + FormatMeters(duelSpaceDiameter) + ").", element);
+            }
+
+            if (element.kind == BlockoutElementKind.Objective && width < tightPassageWidth)
+            {
+                AddIssue(ValidationSeverity.Warning, "Objective footprint is narrower than the tight-passage guide (" + FormatMeters(tightPassageWidth) + ").", element);
+            }
+
+            if (element.kind == BlockoutElementKind.Cover)
+            {
+                if (element.logicalSize.y < 0.75f || element.logicalSize.y > 1.6f)
+                {
+                    AddIssue(ValidationSeverity.Info, "Cover height is outside the usual prototype range of 0.75m-1.6m.", element);
+                }
+
+                if (depth > comfortPassageWidth)
+                {
+                    AddIssue(ValidationSeverity.Info, "Long cover can close lanes quickly; check that nearby paths still keep " + FormatMeters(comfortPassageWidth) + " clearance.", element);
+                }
+            }
         }
 
         private void AddIssue(ValidationSeverity severity, string message, BlockoutElement element)

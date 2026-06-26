@@ -88,3 +88,4 @@ This keeps the first prototype useful for both client feel and multiplayer valid
 ## Planning
 
 - `Docs/CombatAnimationEditorRoadmap.md` defines the target level for the combat animation editor and the next implementation slices.
+- `Docs/LevelDesignScaleGuide.md` defines the first whitebox scale rules for player footprint, passages, cover, and combat pockets.

@@ -2,11 +2,31 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
+using UnityEngine.Serialization;
 
 namespace ActToolkit
 {
     public sealed class CombatActor : MonoBehaviour
     {
+#if UNITY_EDITOR
+        private const string EditorDefaultLocomotionAssetPath = "Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary_Standard/UAL1_Standard.fbx";
+        private const string EditorDefaultJumpAssetPath = "Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary2_Standard/UAL2_Standard.fbx";
+        private const string EditorDefaultIdleClipName = "Armature|Idle_Loop";
+        private const string EditorDefaultWalkClipName = "Armature|Walk_Loop";
+        private const string EditorDefaultMoveClipName = "Armature|Jog_Fwd_Loop";
+        private const string EditorDefaultJumpStartClipName = "Armature|NinjaJump_Start";
+        private const string EditorDefaultJumpLoopClipName = "Armature|NinjaJump_Idle_Loop";
+        private const string EditorDefaultJumpLandClipName = "Armature|NinjaJump_Land";
+#endif
+
+        private enum JumpAnimationPhase
+        {
+            Grounded,
+            Start,
+            AirLoop,
+            Land
+        }
+
         [Header("References")]
         [SerializeField]
         private PlayerCombatGamepadInput input;
@@ -45,6 +65,15 @@ namespace ActToolkit
         [SerializeField]
         private AnimationClip moveClip;
 
+        [SerializeField]
+        private AnimationClip jumpStartClip;
+
+        [SerializeField]
+        private AnimationClip jumpLoopClip;
+
+        [SerializeField]
+        private AnimationClip jumpLandClip;
+
         [Header("Movement")]
         [SerializeField]
         private float moveSpeed = 3.8f;
@@ -54,6 +83,23 @@ namespace ActToolkit
 
         [SerializeField]
         private float gravity = -18f;
+
+        [SerializeField, Min(0.1f)]
+        private float jumpHeight = 1.45f;
+
+        [SerializeField]
+        private float groundedStickVelocity = -1f;
+
+        [SerializeField, Range(0f, 0.5f)]
+        private float minAirTimeForLandingAnimation = 0.12f;
+
+        [SerializeField, Min(0.05f)]
+        private float landingAnimationDuration = 0.3f;
+
+        [FormerlySerializedAs("lockLandingMotion")]
+        [SerializeField]
+        [Tooltip("Consumes player movement, rotation, and combat input during the landing animation.")]
+        private bool lockLandingInput;
 
         [SerializeField, Range(0f, 0.35f)]
         private float locomotionDeadZone = 0.12f;
@@ -75,6 +121,18 @@ namespace ActToolkit
 
         [SerializeField, Range(0.1f, 3f)]
         private float locomotionPlaybackSpeedMax = 3f;
+
+        [SerializeField]
+        [Tooltip("Keeps walk and run on one normalized gait phase so same-leg poses line up while blend weights change.")]
+        private bool synchronizeLocomotionCyclePhase = true;
+
+        [SerializeField, Range(0f, 1f)]
+        [Tooltip("Offset the walk cycle so phase 0 is the chosen same-leg high-knee pose.")]
+        private float locomotionWalkCycleOffset;
+
+        [SerializeField, Range(0f, 1f)]
+        [Tooltip("Offset the run/move cycle so phase 0 is the same leg and pose as the walk high-knee reference.")]
+        private float locomotionMoveCycleOffset;
 
         [SerializeField, Range(0f, 0.35f)]
         private float actionToLocomotionBlendDuration = 0.14f;
@@ -117,9 +175,17 @@ namespace ActToolkit
         private bool currentClipLoops;
         private float locomotionBlendWeight;
         private float returnTransitionTime;
+        private float returnTransitionDuration;
+        private double locomotionCyclePhase;
         private double idleLocomotionTime;
         private double walkLocomotionTime;
         private double moveLocomotionTime;
+        private JumpAnimationPhase jumpPhase = JumpAnimationPhase.Grounded;
+        private float jumpPhaseTime;
+        private float airborneTime;
+        private bool isGrounded = true;
+        private bool wasGrounded = true;
+        private float fallbackGroundY;
 
         private CombatAnimationDefinition currentAction;
         private float currentActionTime;
@@ -184,7 +250,7 @@ namespace ActToolkit
             if (isActiveAndEnabled)
             {
                 EnsureGraph();
-                PlayLocomotionClip(true, 0f);
+                PlayMovementAnimation(true, 0f);
             }
         }
 
@@ -232,6 +298,10 @@ namespace ActToolkit
                 gameplayCamera = Camera.main;
             }
 
+            fallbackGroundY = transform.position.y;
+            isGrounded = characterController == null || characterController.isGrounded;
+            wasGrounded = isGrounded;
+
             LogAnimationDiagnostic("Awake", BuildAnimatorDiagnostic());
         }
 
@@ -269,10 +339,50 @@ namespace ActToolkit
                 moveClip = characterProfile.moveClip;
             }
 
+            if (characterProfile.jumpStartClip != null)
+            {
+                jumpStartClip = characterProfile.jumpStartClip;
+            }
+
+            if (characterProfile.jumpLoopClip != null)
+            {
+                jumpLoopClip = characterProfile.jumpLoopClip;
+            }
+
+            if (characterProfile.jumpLandClip != null)
+            {
+                jumpLandClip = characterProfile.jumpLandClip;
+            }
+
 #if UNITY_EDITOR
+            if (idleClip == null)
+            {
+                idleClip = LoadEditorDefaultClip(EditorDefaultLocomotionAssetPath, EditorDefaultIdleClipName);
+            }
+
             if (walkClip == null)
             {
-                walkClip = LoadEditorDefaultClip("Assets/External/TestAssets/Animations/PreviewClips/Quaternius_UniversalAnimationLibrary_Standard/UAL1_Standard.fbx", "Armature|Walk_Loop");
+                walkClip = LoadEditorDefaultClip(EditorDefaultLocomotionAssetPath, EditorDefaultWalkClipName);
+            }
+
+            if (moveClip == null)
+            {
+                moveClip = LoadEditorDefaultClip(EditorDefaultLocomotionAssetPath, EditorDefaultMoveClipName);
+            }
+
+            if (jumpStartClip == null)
+            {
+                jumpStartClip = LoadEditorDefaultClip(EditorDefaultJumpAssetPath, EditorDefaultJumpStartClipName);
+            }
+
+            if (jumpLoopClip == null)
+            {
+                jumpLoopClip = LoadEditorDefaultClip(EditorDefaultJumpAssetPath, EditorDefaultJumpLoopClipName);
+            }
+
+            if (jumpLandClip == null)
+            {
+                jumpLandClip = LoadEditorDefaultClip(EditorDefaultJumpAssetPath, EditorDefaultJumpLandClipName);
             }
 #endif
         }
@@ -310,7 +420,15 @@ namespace ActToolkit
         private void OnEnable()
         {
             EnsureGraph();
-            PlayLocomotionClip(true, 0f);
+            fallbackGroundY = transform.position.y;
+            isGrounded = characterController == null || characterController.isGrounded;
+            wasGrounded = isGrounded;
+            if (isGrounded)
+            {
+                ResetJumpAnimationState();
+            }
+
+            PlayMovementAnimation(true, 0f);
         }
 
         private void OnDisable()
@@ -330,9 +448,16 @@ namespace ActToolkit
             currentClip = null;
             locomotionBlendWeight = 0f;
             returnTransitionTime = 0f;
+            returnTransitionDuration = 0f;
+            locomotionCyclePhase = 0d;
             idleLocomotionTime = 0d;
             walkLocomotionTime = 0d;
             moveLocomotionTime = 0d;
+            jumpPhase = JumpAnimationPhase.Grounded;
+            jumpPhaseTime = 0f;
+            airborneTime = 0f;
+            isGrounded = true;
+            wasGrounded = true;
         }
 
         private void Update()
@@ -366,7 +491,12 @@ namespace ActToolkit
 
         private bool AnyAssignedClipRequiresAvatar()
         {
-            if (ClipRequiresAvatar(idleClip) || ClipRequiresAvatar(walkClip) || ClipRequiresAvatar(moveClip))
+            if (ClipRequiresAvatar(idleClip)
+                || ClipRequiresAvatar(walkClip)
+                || ClipRequiresAvatar(moveClip)
+                || ClipRequiresAvatar(jumpStartClip)
+                || ClipRequiresAvatar(jumpLoopClip)
+                || ClipRequiresAvatar(jumpLandClip))
             {
                 return true;
             }
@@ -394,13 +524,18 @@ namespace ActToolkit
 
         private void HandleAttackInput()
         {
-            if (input == null)
+            if (input == null || IsLandingInputLocked())
             {
                 return;
             }
 
             foreach (string pressedToken in input.PressedInputTokens)
             {
+                if (CombatInputActionNames.Matches(pressedToken, CombatInputActionNames.Jump))
+                {
+                    continue;
+                }
+
                 HandlePressedCombatInput(CombatInputActionNames.ComposeInputAction(input.HeldInputTokens, input.Move, pressedToken));
             }
         }
@@ -452,31 +587,104 @@ namespace ActToolkit
                 return;
             }
 
-            Vector2 moveInput = IsMovementLocked ? Vector2.zero : EffectiveMoveInput(input.Move);
+            bool landingInputLocked = IsLandingInputLocked();
+            Vector2 moveInput = IsMovementLocked || landingInputLocked ? Vector2.zero : EffectiveMoveInput(input.Move);
             Vector3 move = CameraRelativeMove(moveInput);
+            bool groundedBeforeMove = IsActorGrounded();
 
-            if (move.sqrMagnitude > 0.0001f)
+            if (!landingInputLocked && move.sqrMagnitude > 0.0001f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(move, Vector3.up);
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * deltaTime);
             }
 
+            if (groundedBeforeMove && verticalVelocity < 0f)
+            {
+                verticalVelocity = groundedStickVelocity;
+            }
+
+            if (CanStartJump(groundedBeforeMove))
+            {
+                verticalVelocity = Mathf.Sqrt(Mathf.Max(0f, -2f * gravity * jumpHeight));
+                groundedBeforeMove = false;
+                BeginJumpStartAnimation();
+            }
+
+            verticalVelocity += gravity * deltaTime;
+            Vector3 velocity = move * moveSpeed;
+            velocity.y = verticalVelocity;
+
             if (characterController != null)
             {
-                if (characterController.isGrounded && verticalVelocity < 0f)
+                characterController.Move(velocity * deltaTime);
+                bool groundedAfterMove = characterController.isGrounded;
+                if (groundedAfterMove && verticalVelocity < 0f)
                 {
-                    verticalVelocity = -1f;
+                    verticalVelocity = groundedStickVelocity;
                 }
 
-                verticalVelocity += gravity * deltaTime;
-                Vector3 velocity = move * moveSpeed;
-                velocity.y = verticalVelocity;
-                characterController.Move(velocity * deltaTime);
+                UpdateAirborneState(groundedAfterMove, deltaTime);
             }
             else
             {
-                transform.position += move * (moveSpeed * deltaTime);
+                Vector3 nextPosition = transform.position + velocity * deltaTime;
+                bool groundedAfterMove = nextPosition.y <= fallbackGroundY && verticalVelocity <= 0f;
+                if (groundedAfterMove)
+                {
+                    nextPosition.y = fallbackGroundY;
+                    verticalVelocity = groundedStickVelocity;
+                }
+
+                transform.position = nextPosition;
+                UpdateAirborneState(groundedAfterMove, deltaTime);
             }
+        }
+
+        private bool CanStartJump(bool groundedBeforeMove)
+        {
+            return input != null
+                && input.JumpPressed
+                && groundedBeforeMove
+                && jumpPhase != JumpAnimationPhase.Land
+                && currentAction == null;
+        }
+
+        private bool IsLandingInputLocked()
+        {
+            return lockLandingInput && jumpPhase == JumpAnimationPhase.Land;
+        }
+
+        private bool IsActorGrounded()
+        {
+            return characterController == null ? isGrounded : characterController.isGrounded;
+        }
+
+        private void UpdateAirborneState(bool groundedNow, float deltaTime)
+        {
+            wasGrounded = isGrounded;
+            isGrounded = groundedNow;
+
+            if (!isGrounded)
+            {
+                airborneTime += Mathf.Max(0f, deltaTime);
+                if (jumpPhase == JumpAnimationPhase.Grounded || jumpPhase == JumpAnimationPhase.Land)
+                {
+                    BeginJumpLoopAnimation(false);
+                }
+
+                return;
+            }
+
+            if (!wasGrounded && airborneTime >= minAirTimeForLandingAnimation)
+            {
+                BeginJumpLandAnimation();
+            }
+            else if (jumpPhase != JumpAnimationPhase.Land)
+            {
+                ResetJumpAnimationState();
+            }
+
+            airborneTime = 0f;
         }
 
         private Vector3 CameraRelativeMove(Vector2 moveInput)
@@ -521,7 +729,7 @@ namespace ActToolkit
 
             if (currentAction == null)
             {
-                PlayLocomotionClip(false, deltaTime);
+                PlayMovementAnimation(false, deltaTime);
                 return;
             }
 
@@ -574,6 +782,148 @@ namespace ActToolkit
             UpdateLocomotionBlend(force, deltaTime);
         }
 
+        private void PlayMovementAnimation(bool force, float deltaTime)
+        {
+            if (PlayJumpAnimation(force, deltaTime))
+            {
+                return;
+            }
+
+            PlayLocomotionClip(force, deltaTime);
+        }
+
+        private bool PlayJumpAnimation(bool force, float deltaTime)
+        {
+            if (!graphReady || jumpPhase == JumpAnimationPhase.Grounded)
+            {
+                return false;
+            }
+
+            jumpPhaseTime += Mathf.Max(0f, deltaTime);
+
+            if (jumpPhase == JumpAnimationPhase.Start)
+            {
+                AnimationClip startClip = jumpStartClip != null ? jumpStartClip : jumpLoopClip;
+                if (startClip == null)
+                {
+                    BeginJumpLoopAnimation(true);
+                    return PlayJumpAnimation(true, 0f);
+                }
+
+                PlayClipIfNeeded(startClip, false, force);
+                if (jumpPhaseTime >= Mathf.Max(0.01f, startClip.length))
+                {
+                    BeginJumpLoopAnimation(true);
+                    return PlayJumpAnimation(true, 0f);
+                }
+
+                return true;
+            }
+
+            if (jumpPhase == JumpAnimationPhase.AirLoop)
+            {
+                if (jumpLoopClip == null)
+                {
+                    return false;
+                }
+
+                PlayClipIfNeeded(jumpLoopClip, true, force);
+                if (currentPlayable.IsValid())
+                {
+                    currentPlayable.SetSpeed(1d);
+                }
+
+                return true;
+            }
+
+            if (jumpPhase == JumpAnimationPhase.Land)
+            {
+                if (jumpLandClip == null)
+                {
+                    ResetJumpAnimationState();
+                    return false;
+                }
+
+                float targetDuration = Mathf.Max(0.05f, landingAnimationDuration);
+                if (!returnTransitionMixer.IsValid())
+                {
+                    PlayClipIfNeeded(jumpLandClip, false, force);
+                    if (currentPlayable.IsValid())
+                    {
+                        currentPlayable.SetSpeed(Mathf.Max(0.01f, jumpLandClip.length) / targetDuration);
+                    }
+
+                    BeginReturnToLocomotionTransition(targetDuration, false);
+                }
+                else if (currentPlayable.IsValid())
+                {
+                    currentPlayable.SetSpeed(Mathf.Max(0.01f, jumpLandClip.length) / targetDuration);
+                }
+
+                UpdateReturnToLocomotionTransition(deltaTime);
+
+                if (jumpPhaseTime >= targetDuration)
+                {
+                    ResetJumpAnimationState();
+                    if (returnTransitionMixer.IsValid())
+                    {
+                        CompleteReturnToLocomotionTransition();
+                    }
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private void PlayClipIfNeeded(AnimationClip clipToPlay, bool loop, bool forceRestart)
+        {
+            if (clipToPlay == null)
+            {
+                return;
+            }
+
+            if (forceRestart || currentClip != clipToPlay || !currentPlayable.IsValid())
+            {
+                PlayClip(clipToPlay, loop, forceRestart);
+            }
+        }
+
+        private void BeginJumpStartAnimation()
+        {
+            jumpPhase = JumpAnimationPhase.Start;
+            jumpPhaseTime = 0f;
+            airborneTime = 0f;
+            isGrounded = false;
+        }
+
+        private void BeginJumpLoopAnimation(bool forceRestart)
+        {
+            jumpPhase = JumpAnimationPhase.AirLoop;
+            if (forceRestart)
+            {
+                jumpPhaseTime = 0f;
+            }
+        }
+
+        private void BeginJumpLandAnimation()
+        {
+            if (jumpPhase == JumpAnimationPhase.Land)
+            {
+                return;
+            }
+
+            jumpPhase = JumpAnimationPhase.Land;
+            jumpPhaseTime = 0f;
+        }
+
+        private void ResetJumpAnimationState()
+        {
+            jumpPhase = JumpAnimationPhase.Grounded;
+            jumpPhaseTime = 0f;
+        }
+
         private void UpdateLocomotionBlend(bool force, float deltaTime)
         {
             Vector2 effectiveMove = input == null ? Vector2.zero : EffectiveMoveInput(input.Move);
@@ -601,7 +951,7 @@ namespace ActToolkit
                 locomotionMixer.SetInputWeight(2, moveWeight);
             }
 
-            UpdateLocomotionPlayableTimes(deltaTime, playbackSpeed);
+            UpdateLocomotionPlayableTimes(deltaTime, playbackSpeed, walkWeight, moveWeight);
 
             currentClip = SelectDominantLocomotionClip(idleWeight, walkWeight, moveWeight);
             currentClipLoops = true;
@@ -843,7 +1193,19 @@ namespace ActToolkit
 
         private void BeginReturnToLocomotionTransition()
         {
-            if (!graphReady || !currentPlayable.IsValid() || actionToLocomotionBlendDuration <= 0f)
+            BeginReturnToLocomotionTransition(actionToLocomotionBlendDuration, true);
+        }
+
+        private void BeginReturnToLocomotionTransition(float duration, bool freezeSource)
+        {
+            if (jumpPhase != JumpAnimationPhase.Grounded && freezeSource)
+            {
+                PlayMovementAnimation(true, 0f);
+                return;
+            }
+
+            float transitionDuration = Mathf.Max(0f, duration);
+            if (!graphReady || !currentPlayable.IsValid() || transitionDuration <= 0f)
             {
                 PlayLocomotionClip(true, 0f);
                 return;
@@ -851,7 +1213,11 @@ namespace ActToolkit
 
             EnsureLocomotionMixer(true);
             UpdateLocomotionBlend(true, 0f);
-            currentPlayable.SetSpeed(0d);
+            if (freezeSource)
+            {
+                currentPlayable.SetSpeed(0d);
+            }
+
             currentPlayable.SetDone(false);
 
             returnTransitionMixer = AnimationMixerPlayable.Create(graph, 2);
@@ -860,9 +1226,11 @@ namespace ActToolkit
             returnTransitionMixer.SetInputWeight(0, 1f);
             returnTransitionMixer.SetInputWeight(1, 0f);
             returnTransitionTime = 0f;
+            returnTransitionDuration = transitionDuration;
             output.SetSourcePlayable(returnTransitionMixer);
 
-            LogAnimationDiagnostic("ReturnToLocomotion", "duration=" + actionToLocomotionBlendDuration.ToString("0.00")
+            LogAnimationDiagnostic("ReturnToLocomotion", "duration=" + returnTransitionDuration.ToString("0.00")
+                + ", freezeSource=" + freezeSource
                 + ", targetClip=" + ClipName(currentClip));
         }
 
@@ -877,9 +1245,10 @@ namespace ActToolkit
             UpdateLocomotionBlend(false, deltaTime);
 
             returnTransitionTime += Mathf.Max(0f, deltaTime);
-            float linear = actionToLocomotionBlendDuration <= 0f
+            float duration = returnTransitionDuration > 0f ? returnTransitionDuration : actionToLocomotionBlendDuration;
+            float linear = duration <= 0f
                 ? 1f
-                : Mathf.Clamp01(returnTransitionTime / actionToLocomotionBlendDuration);
+                : Mathf.Clamp01(returnTransitionTime / duration);
             float eased = Mathf.SmoothStep(0f, 1f, linear);
             returnTransitionMixer.SetInputWeight(0, 1f - eased);
             returnTransitionMixer.SetInputWeight(1, eased);
@@ -1219,6 +1588,7 @@ namespace ActToolkit
             }
 
             returnTransitionTime = 0f;
+            returnTransitionDuration = 0f;
         }
 
         private static void ConfigureClipPlayable(AnimationClipPlayable playable, bool loop)
@@ -1234,14 +1604,70 @@ namespace ActToolkit
             playable.SetSpeed(1d);
         }
 
-        private void UpdateLocomotionPlayableTimes(float deltaTime, float playbackSpeed)
+        private void UpdateLocomotionPlayableTimes(float deltaTime, float playbackSpeed, float walkWeight, float moveWeight)
         {
             float safeDeltaTime = Mathf.Max(0f, deltaTime);
             float safePlaybackSpeed = Mathf.Max(0f, playbackSpeed);
 
             AdvanceLoopingPlayable(idlePlayable, idleClip, ref idleLocomotionTime, safeDeltaTime, 1f);
-            AdvanceLoopingPlayable(walkPlayable, walkClip, ref walkLocomotionTime, safeDeltaTime, safePlaybackSpeed);
-            AdvanceLoopingPlayable(movePlayable, moveClip, ref moveLocomotionTime, safeDeltaTime, safePlaybackSpeed);
+            if (!synchronizeLocomotionCyclePhase)
+            {
+                AdvanceLoopingPlayable(walkPlayable, walkClip, ref walkLocomotionTime, safeDeltaTime, safePlaybackSpeed);
+                AdvanceLoopingPlayable(movePlayable, moveClip, ref moveLocomotionTime, safeDeltaTime, safePlaybackSpeed);
+                return;
+            }
+
+            AdvanceSynchronizedLocomotionPhase(safeDeltaTime, safePlaybackSpeed, walkWeight, moveWeight);
+            ApplySynchronizedLoopingPlayable(walkPlayable, walkClip, ref walkLocomotionTime, locomotionWalkCycleOffset);
+            ApplySynchronizedLoopingPlayable(movePlayable, moveClip, ref moveLocomotionTime, locomotionMoveCycleOffset);
+        }
+
+        private void AdvanceSynchronizedLocomotionPhase(float deltaTime, float playbackSpeed, float walkWeight, float moveWeight)
+        {
+            if (deltaTime <= 0f || playbackSpeed <= 0f)
+            {
+                return;
+            }
+
+            float cycleRate = 0f;
+            float totalWeight = 0f;
+            AddCycleRate(walkClip, walkWeight, ref cycleRate, ref totalWeight);
+            AddCycleRate(moveClip, moveWeight, ref cycleRate, ref totalWeight);
+            if (totalWeight <= 0.0001f)
+            {
+                return;
+            }
+
+            cycleRate = playbackSpeed * cycleRate / totalWeight;
+            locomotionCyclePhase = PositiveModulo(locomotionCyclePhase + deltaTime * cycleRate, 1d);
+        }
+
+        private static void AddCycleRate(AnimationClip clip, float weight, ref float cycleRate, ref float totalWeight)
+        {
+            if (clip == null || clip.length <= 0f || weight <= 0.0001f)
+            {
+                return;
+            }
+
+            cycleRate += weight / clip.length;
+            totalWeight += weight;
+        }
+
+        private void ApplySynchronizedLoopingPlayable(
+            AnimationClipPlayable playable,
+            AnimationClip clip,
+            ref double localTime,
+            float phaseOffset)
+        {
+            if (!playable.IsValid() || clip == null || clip.length <= 0f)
+            {
+                return;
+            }
+
+            double phase = PositiveModulo(locomotionCyclePhase + Mathf.Repeat(phaseOffset, 1f), 1d);
+            localTime = phase * clip.length;
+            playable.SetTime(localTime);
+            playable.SetDone(false);
         }
 
         private static void AdvanceLoopingPlayable(
@@ -1312,6 +1738,7 @@ namespace ActToolkit
 
         private void ResetLocomotionTimes()
         {
+            locomotionCyclePhase = 0d;
             idleLocomotionTime = 0d;
             walkLocomotionTime = 0d;
             moveLocomotionTime = 0d;
@@ -1382,7 +1809,18 @@ namespace ActToolkit
                 + ", " + BuildAnimatorDiagnostic()
                 + ", idleClip=" + ClipName(idleClip)
                 + ", walkClip=" + ClipName(walkClip)
-                + ", moveClip=" + ClipName(moveClip);
+                + ", moveClip=" + ClipName(moveClip)
+                + ", jumpStartClip=" + ClipName(jumpStartClip)
+                + ", jumpLoopClip=" + ClipName(jumpLoopClip)
+                + ", jumpLandClip=" + ClipName(jumpLandClip)
+                + ", landingDuration=" + landingAnimationDuration.ToString("0.000")
+                + ", lockLandingInput=" + lockLandingInput
+                + ", syncLocomotionPhase=" + synchronizeLocomotionCyclePhase
+                + ", locomotionPhase=" + locomotionCyclePhase.ToString("0.000")
+                + ", walkPhaseOffset=" + locomotionWalkCycleOffset.ToString("0.000")
+                + ", movePhaseOffset=" + locomotionMoveCycleOffset.ToString("0.000")
+                + ", jumpPhase=" + jumpPhase
+                + ", grounded=" + isGrounded;
         }
 
         private string BuildActionDiagnostic(CombatAnimationDefinition action)

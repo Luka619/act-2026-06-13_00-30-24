@@ -23,6 +23,9 @@ namespace ActToolkit.EditorTools
         private const string DefaultIdleClipName = "Armature|Idle_Loop";
         private const string DefaultWalkClipName = "Armature|Walk_Loop";
         private const string DefaultMoveClipName = "Armature|Jog_Fwd_Loop";
+        private const string DefaultJumpStartClipName = "Armature|NinjaJump_Start";
+        private const string DefaultJumpLoopClipName = "Armature|NinjaJump_Idle_Loop";
+        private const string DefaultJumpLandClipName = "Armature|NinjaJump_Land";
         private const float MannequinVisualYawCorrection = 180f;
         private const float LocomotionDeadZone = 0.12f;
         private const float LocomotionBlendSpeed = 8f;
@@ -31,6 +34,7 @@ namespace ActToolkit.EditorTools
         private const float LocomotionMoveReferenceSpeed = 5.309f;
         private const float LocomotionPlaybackSpeedMin = 0.35f;
         private const float LocomotionPlaybackSpeedMax = 3f;
+        private const float LandingAnimationDuration = 0.3f;
         private const float ActionToLocomotionBlendDuration = 0.14f;
         private const float KeyLightIntensity = 0.45f;
         private const float KeyLightShadowStrength = 0.45f;
@@ -196,6 +200,9 @@ namespace ActToolkit.EditorTools
             profile.idleClip = LoadDefaultIdleClip();
             profile.walkClip = LoadDefaultWalkClip();
             profile.moveClip = LoadDefaultMoveClip();
+            profile.jumpStartClip = LoadDefaultJumpStartClip();
+            profile.jumpLoopClip = LoadDefaultJumpLoopClip();
+            profile.jumpLandClip = LoadDefaultJumpLandClip();
             profile.comboTable = database;
             profile.EnsureDefaults();
 
@@ -790,6 +797,15 @@ namespace ActToolkit.EditorTools
             AnimationClip runClip = characterProfile != null && characterProfile.moveClip != null
                 ? characterProfile.moveClip
                 : LoadDefaultMoveClip();
+            AnimationClip jumpStartClip = characterProfile != null && characterProfile.jumpStartClip != null
+                ? characterProfile.jumpStartClip
+                : LoadDefaultJumpStartClip();
+            AnimationClip jumpLoopClip = characterProfile != null && characterProfile.jumpLoopClip != null
+                ? characterProfile.jumpLoopClip
+                : LoadDefaultJumpLoopClip();
+            AnimationClip jumpLandClip = characterProfile != null && characterProfile.jumpLandClip != null
+                ? characterProfile.jumpLandClip
+                : LoadDefaultJumpLandClip();
 
             SerializedObject actorObject = new SerializedObject(actor);
             actorObject.FindProperty("input").objectReferenceValue = input;
@@ -804,6 +820,11 @@ namespace ActToolkit.EditorTools
             actorObject.FindProperty("idleClip").objectReferenceValue = idleClip;
             actorObject.FindProperty("walkClip").objectReferenceValue = walkClip;
             actorObject.FindProperty("moveClip").objectReferenceValue = runClip;
+            actorObject.FindProperty("jumpStartClip").objectReferenceValue = jumpStartClip;
+            actorObject.FindProperty("jumpLoopClip").objectReferenceValue = jumpLoopClip;
+            actorObject.FindProperty("jumpLandClip").objectReferenceValue = jumpLandClip;
+            actorObject.FindProperty("landingAnimationDuration").floatValue = LandingAnimationDuration;
+            actorObject.FindProperty("lockLandingInput").boolValue = false;
             actorObject.FindProperty("locomotionDeadZone").floatValue = LocomotionDeadZone;
             actorObject.FindProperty("locomotionBlendSpeed").floatValue = LocomotionBlendSpeed;
             actorObject.FindProperty("locomotionWalkBlendPoint").floatValue = LocomotionWalkBlendPoint;
@@ -1034,6 +1055,21 @@ namespace ActToolkit.EditorTools
         private static AnimationClip LoadDefaultMoveClip()
         {
             return LoadClipByName(Ual1Path, DefaultMoveClipName);
+        }
+
+        private static AnimationClip LoadDefaultJumpStartClip()
+        {
+            return LoadClipByName(Ual2Path, DefaultJumpStartClipName);
+        }
+
+        private static AnimationClip LoadDefaultJumpLoopClip()
+        {
+            return LoadClipByName(Ual2Path, DefaultJumpLoopClipName);
+        }
+
+        private static AnimationClip LoadDefaultJumpLandClip()
+        {
+            return LoadClipByName(Ual2Path, DefaultJumpLandClipName);
         }
 
         private static AnimationClip LoadClipByName(string path, string clipName)

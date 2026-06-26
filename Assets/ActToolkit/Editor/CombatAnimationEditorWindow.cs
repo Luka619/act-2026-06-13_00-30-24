@@ -34,7 +34,10 @@ namespace ActToolkit.EditorTools
         {
             Idle,
             Walk,
-            Move
+            Move,
+            JumpStart,
+            JumpLoop,
+            JumpLand
         }
 
         private enum AnimationLibraryContext
@@ -537,6 +540,9 @@ namespace ActToolkit.EditorTools
             profile.idleClip = null;
             profile.walkClip = null;
             profile.moveClip = null;
+            profile.jumpStartClip = null;
+            profile.jumpLoopClip = null;
+            profile.jumpLandClip = null;
             profile.EnsureDefaults();
 
             string path = AssetDatabase.GenerateUniqueAssetPath(ActToolkitEditorUtilities.CombatMvpFolder + "/" + SanitizeAssetName(displayName) + "_Profile.asset");
@@ -681,6 +687,24 @@ namespace ActToolkit.EditorTools
             if (characterProfile.moveClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.moveClip))
             {
                 characterProfile.moveClip = null;
+                removed++;
+            }
+
+            if (characterProfile.jumpStartClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.jumpStartClip))
+            {
+                characterProfile.jumpStartClip = null;
+                removed++;
+            }
+
+            if (characterProfile.jumpLoopClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.jumpLoopClip))
+            {
+                characterProfile.jumpLoopClip = null;
+                removed++;
+            }
+
+            if (characterProfile.jumpLandClip != null && !ActToolkitSkeletonCompatibility.IsClipCompatibleWithModel(modelPath, characterProfile.jumpLandClip))
+            {
+                characterProfile.jumpLandClip = null;
                 removed++;
             }
 
@@ -962,6 +986,9 @@ namespace ActToolkit.EditorTools
             characterProfile.idleClip = (AnimationClip)EditorGUILayout.ObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip), false);
             characterProfile.walkClip = (AnimationClip)EditorGUILayout.ObjectField("Walk Clip", characterProfile.walkClip, typeof(AnimationClip), false);
             characterProfile.moveClip = (AnimationClip)EditorGUILayout.ObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip), false);
+            characterProfile.jumpStartClip = (AnimationClip)EditorGUILayout.ObjectField("Jump Start Clip", characterProfile.jumpStartClip, typeof(AnimationClip), false);
+            characterProfile.jumpLoopClip = (AnimationClip)EditorGUILayout.ObjectField("Jump Loop Clip", characterProfile.jumpLoopClip, typeof(AnimationClip), false);
+            characterProfile.jumpLandClip = (AnimationClip)EditorGUILayout.ObjectField("Jump Land Clip", characterProfile.jumpLandClip, typeof(AnimationClip), false);
             characterProfile.comboTable = (CombatActionDatabase)EditorGUILayout.ObjectField("Combo Table", characterProfile.comboTable, typeof(CombatActionDatabase), false);
             if (EditorGUI.EndChangeCheck())
             {
@@ -1008,6 +1035,9 @@ namespace ActToolkit.EditorTools
             DrawReadonlyObjectField("Idle Clip", characterProfile.idleClip, typeof(AnimationClip));
             DrawReadonlyObjectField("Walk Clip", characterProfile.walkClip, typeof(AnimationClip));
             DrawReadonlyObjectField("Move Clip", characterProfile.moveClip, typeof(AnimationClip));
+            DrawReadonlyObjectField("Jump Start Clip", characterProfile.jumpStartClip, typeof(AnimationClip));
+            DrawReadonlyObjectField("Jump Loop Clip", characterProfile.jumpLoopClip, typeof(AnimationClip));
+            DrawReadonlyObjectField("Jump Land Clip", characterProfile.jumpLandClip, typeof(AnimationClip));
             EditorGUILayout.EndVertical();
         }
 
@@ -2612,7 +2642,13 @@ namespace ActToolkit.EditorTools
                     ? characterProfile.idleClip
                     : defaultClipSlot == CharacterDefaultClipSlot.Walk
                         ? characterProfile.walkClip
-                    : characterProfile.moveClip;
+                    : defaultClipSlot == CharacterDefaultClipSlot.Move
+                        ? characterProfile.moveClip
+                    : defaultClipSlot == CharacterDefaultClipSlot.JumpStart
+                        ? characterProfile.jumpStartClip
+                    : defaultClipSlot == CharacterDefaultClipSlot.JumpLoop
+                        ? characterProfile.jumpLoopClip
+                    : characterProfile.jumpLandClip;
             int index = FindAnimationCandidateIndex(target);
             if (index >= 0)
             {
@@ -2642,9 +2678,21 @@ namespace ActToolkit.EditorTools
             {
                 characterProfile.walkClip = selectedClip;
             }
-            else
+            else if (defaultClipSlot == CharacterDefaultClipSlot.Move)
             {
                 characterProfile.moveClip = selectedClip;
+            }
+            else if (defaultClipSlot == CharacterDefaultClipSlot.JumpStart)
+            {
+                characterProfile.jumpStartClip = selectedClip;
+            }
+            else if (defaultClipSlot == CharacterDefaultClipSlot.JumpLoop)
+            {
+                characterProfile.jumpLoopClip = selectedClip;
+            }
+            else
+            {
+                characterProfile.jumpLandClip = selectedClip;
             }
 
             SaveCharacterProfileChanges(false, false);
